@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Foragent.Sample.Console/Foragent.Sample.Console.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Foragent.Agent/Foragent.Agent.csproj" />
+    <Project Path="src/Foragent.Browser/Foragent.Browser.csproj" />
+    <Project Path="src/Foragent.Capabilities/Foragent.Capabilities.csproj" />
+    <Project Path="src/Foragent.Credentials/Foragent.Credentials.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Foragent.Agent.Tests/Foragent.Agent.Tests.csproj" />
+    <Project Path="tests/Foragent.Browser.Tests/Foragent.Browser.Tests.csproj" />
+    <Project Path="tests/Foragent.Integration.Tests/Foragent.Integration.Tests.csproj" />
+  </Folder>
+</Solution>
