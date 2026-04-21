@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Foragent is at **milestone 1** (spec §9.1): empty agent on the RockBot framework with one trivial capability (`fetch-page-title`). Playwright, credentials, and the remaining capabilities are milestones 2–4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
+Foragent is at **milestone 2** (spec §9.1): `fetch-page-title` now goes through real Playwright Chromium instead of `HttpClient` + regex. Credentials and the remaining capabilities are milestones 3–4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
 
 ## Build / test
 
@@ -22,6 +22,8 @@ Single test project / single test:
 dotnet test tests/Foragent.Agent.Tests/Foragent.Agent.Tests.csproj
 dotnet test --filter "FullyQualifiedName~FetchPageTitleHandlerTests"
 ```
+
+`Foragent.Browser.Tests` spins up real Chromium against an in-process Kestrel host — **unit tests mock `IBrowserSessionFactory`, integration tests use it for real.** First run downloads Chromium (~130 MB) into `~/.cache/ms-playwright`; subsequent runs reuse the cache and take ~1 s.
 
 `Directory.Build.props` sets `TreatWarningsAsErrors=true` and `Nullable=enable` for every project — a warning will break the build. `Directory.Packages.props` enables central package management with **floating versions** (`CentralPackageFloatingVersionsEnabled=true`); RockBot packages float on `0.8.*`. Add new deps as `<PackageVersion>` there, then reference them from the csproj without a version.
 
@@ -68,6 +70,10 @@ Key framework pieces Foragent uses today:
 - `RockBot.A2A.Gateway.AddA2AHttpGateway` + `MapA2AHttpGateway` — the in-process HTTP surface. Published as NuGet in RockBot 0.8.4 (see `docs/framework-feedback.md`).
 
 `EchoChatClient` exists only because `AddRockBotChatClient` is mandatory even for non-LLM agents; Foragent v1 never calls the LLM. Delete it once the framework supports opting out.
+
+## Browser
+
+`Foragent.Browser` wraps Playwright. `AddForagentBrowser()` in `Foragent.Agent/Program.cs` registers `PlaywrightBrowserHost` (`IHostedService` owning one shared Chromium per process) and `IBrowserSessionFactory` (hands out a fresh `IBrowserContext` per A2A task — isolation guarantee from spec §3.5). The Playwright version pinned in `Directory.Packages.props` must match the `mcr.microsoft.com/playwright/dotnet:v<X>-noble` tag in the `Dockerfile`. `Foragent.Browser` has `InternalsVisibleTo("Foragent.Browser.Tests")` so tests drive the real `PlaywrightBrowserSessionFactory` without promoting its implementation types to public.
 
 ## Conventions
 
