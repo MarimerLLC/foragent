@@ -1,0 +1,18 @@
+[
+  {
+    "agentName": "Foragent",
+    "description": "Browser agent — fetches page titles over HTTP A2A.",
+    "version": "1.0",
+    "url": "http://foragent:8080",
+    "protocolVersion": "1.0",
+    "authHeaderName": "X-Api-Key",
+    "authHeaderValueBase64": "cm9ja2JvdC1jYWxscy1mb3JhZ2VudA==",
+    "skills": [
+      {
+        "id": "fetch-page-title",
+        "name": "Fetch Page Title",
+        "description": "Fetches a URL and returns the contents of its <title> element."
+      }
+    ]
+  }
+]

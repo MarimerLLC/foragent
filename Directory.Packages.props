@@ -1,11 +1,22 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Microsoft.Playwright" Version="1.50.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI" Version="9.5.0" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.*" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.*" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.*" />
+    <PackageVersion Include="A2A" Version="1.0.0-preview" />
+    <PackageVersion Include="RockBot.A2A" Version="0.8.*" />
+    <PackageVersion Include="RockBot.A2A.Abstractions" Version="0.8.*" />
+    <PackageVersion Include="RockBot.A2A.Gateway" Version="0.8.*" />
+    <PackageVersion Include="RockBot.Host" Version="0.8.*" />
+    <PackageVersion Include="RockBot.Host.Abstractions" Version="0.8.*" />
+    <PackageVersion Include="RockBot.Llm" Version="0.8.*" />
+    <PackageVersion Include="RockBot.Messaging.Abstractions" Version="0.8.*" />
+    <PackageVersion Include="RockBot.Messaging.RabbitMQ" Version="0.8.*" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />

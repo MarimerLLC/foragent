@@ -1,0 +1,168 @@
+# End-to-end dev harness for Foragent.
+#
+# Stands up:
+#   - rabbitmq        — shared bus (RockBot agents are bus-subscribed)
+#   - foragent        — this project; exposes HTTP A2A on port 5210
+#   - rockbot-init    — seeds /data/agent with RockBot profile + well-known-agents.json
+#                       pointing at foragent
+#   - rockbot         — rockylhotka/rockbot-agent:latest, configured to know Foragent
+#                       as an A2A peer it can delegate tasks to
+#   - blazor          — rockylhotka/rockbot-blazor:latest, web UI for chatting with
+#                       the rockbot agent. Open http://localhost:8080 to test.
+#
+# Run:
+#   docker compose up --build
+#
+# Smoke-test Foragent directly (skips RockBot entirely):
+#   curl http://localhost:5210/.well-known/agent-card.json
+#   curl -X POST http://localhost:5210/ \
+#     -H "X-Api-Key: rockbot-calls-foragent" \
+#     -H "Content-Type: application/json" \
+#     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"https://example.com"}]},"metadata":{"skill":"fetch-page-title"}}}'
+# Note: the A2A v1-preview schema uses protobuf-style enum values (ROLE_USER, not "user")
+# and parts are bare {"text":"..."} objects — no "kind" field.
+#
+# RockBot's LLM config is passed through from .env (see .env.example for the shape —
+# `cp .env.example .env` and fill in your key). Without it the agent falls back to
+# EchoChatClient and won't reason its way to invoke_agent — but foragent itself is
+# exercised end-to-end by the curl above.
+
+name: foragent
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    hostname: rabbitmq
+    ports:
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: foragent
+      RABBITMQ_DEFAULT_PASS: foragent
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  foragent:
+    build:
+      context: .
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "5210:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: foragent
+      RabbitMq__Password: foragent
+      RabbitMq__VirtualHost: /
+      Gateway__AgentName: Foragent
+      Gateway__InternalAgentName: Foragent
+      Gateway__Description: "Browser agent — fetch-page-title in step 1"
+      # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
+      ApiKeys__rockbot-calls-foragent__AgentId: RockBot
+      ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
+    volumes:
+      - foragent-data:/app
+
+  rockbot-init:
+    image: rockylhotka/rockbot-agent:latest
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Seeding RockBot agent data..."
+        for f in soul.md directives.md subagent-directives.md style.md memory-rules.md \
+                 dream.md skill-dream.md common-directives.md session-evaluator.md \
+                 session-start.md heartbeat-patrol.md skill-optimize.md \
+                 dlq-dream.md routing-dream.md; do
+          src="/app/agent/$$f"; dst="/data/agent/$$f"
+          [ -f "$$src" ] && [ ! -s "$$dst" ] && cp "$$src" "$$dst"
+        done
+        cp /seed/agent-name.md /data/agent/agent-name.md
+        cp /seed/well-known-agents.json /data/agent/well-known-agents.json
+        [ ! -s /data/agent/agent-trust.json ] && cp /seed/agent-trust.json /data/agent/agent-trust.json
+        [ ! -f /data/agent/mcp.json ] && echo '{"mcpServers":{}}' > /data/agent/mcp.json
+        for model_dir in /app/model-behaviors/*/; do
+          [ -d "$$model_dir" ] || continue
+          model_name=$$(basename "$$model_dir")
+          mkdir -p "/data/agent/model-behaviors/$$model_name"
+          for src in "$$model_dir"*; do
+            [ -f "$$src" ] || continue
+            dst="/data/agent/model-behaviors/$$model_name/$$(basename $$src)"
+            [ ! -s "$$dst" ] && cp "$$src" "$$dst"
+          done
+        done
+        mkdir -p /data/agent/memory /data/agent/skills /data/agent/conversations /data/agent/feedback
+        chmod -R 777 /data/agent
+        echo "RockBot agent data ready."
+    volumes:
+      - rockbot-data:/data/agent
+      - ./deploy/rockbot-seed:/seed:ro
+
+  rockbot:
+    image: rockylhotka/rockbot-agent:latest
+    depends_on:
+      rockbot-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      foragent:
+        condition: service_started
+    environment:
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: foragent
+      RabbitMq__Password: foragent
+      RabbitMq__VirtualHost: /
+      AgentProfile__BasePath: /data/agent
+      Memory__BasePath: /data/agent/memory
+      Skill__BasePath: /data/agent/skills
+      McpBridge__ConfigPath: /data/agent/mcp.json
+      ModelBehaviors__BasePath: /data/agent/model-behaviors
+      Agent__Timezone: ${AGENT_TIMEZONE:-America/Chicago}
+      LLM__Provider: ${LLM_PROVIDER:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LLM__Balanced__ModelId: ${LLM_MODEL_ID:-}
+      LLM__Balanced__Endpoint: ${LLM_ENDPOINT:-}
+      LLM__Balanced__ApiKey: ${LLM_API_KEY:-}
+    volumes:
+      - rockbot-data:/data/agent
+      - rockbot-shared:/rockbot/shared
+
+  blazor:
+    # Built from sibling ../rockbot checkout — the published
+    # rockylhotka/rockbot-blazor:latest image (2026-04-02) predates commit
+    # 9eab9d5 (2026-04-13) that scoped message-bus topics by agent name, so it
+    # still publishes to plain `user.message` instead of `user.message.RockBot`
+    # and the rockbot-agent container never picks the message up.
+    build:
+      context: ../rockbot
+      dockerfile: src/RockBot.UserProxy.Blazor/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      rockbot:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: foragent
+      RabbitMq__Password: foragent
+      RabbitMq__VirtualHost: /
+      # Target the rockbot agent's message topics — rockbot subscribes to
+      # user.message.{agentName}. Without this, blazor publishes to plain
+      # user.message and nobody picks it up. The blazor image reads Agent:Name
+      # (not UserProxy:AgentName) in its Program.cs.
+      Agent__Name: RockBot
+
+volumes:
+  foragent-data:
+  rockbot-data:
+  rockbot-shared:

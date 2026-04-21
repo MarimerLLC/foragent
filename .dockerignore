@@ -1,0 +1,17 @@
+**/bin
+**/obj
+**/node_modules
+.git
+.github
+.vs
+.vscode
+tests
+samples
+docs
+deploy
+*.md
+LICENSE
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
