@@ -54,6 +54,75 @@ feedback. Capture it."
   beyond step 2 will make this more painful; the `switch (request.Skill)` in
   `ForagentTaskHandler` is already starting to accumulate per-skill setup.
 
+## Step 4 — Credentials + first credentialed capability (post-to-site / Bluesky)
+
+### Framework observations
+
+- **`ICredentialBroker` is Foragent-local, not framework.** We deliberately did
+  not propose this for RockBot yet — spec §6.2 treats the broker as a Foragent
+  concept, and no second consumer exists. If future agents (RockBot or
+  third-party) grow similar needs, consider lifting a broker abstraction
+  upstream with the same value-dictionary shape (see below).
+- **`ISitePoster` dispatch is a repeat of the step-3 pattern.** We added a
+  small in-capability dispatcher (`PostToSiteCapability` → keyed
+  `IReadOnlyDictionary<string, ISitePoster>`) to route a single A2A skill to
+  a family of site-specific implementations. Together with the step-3
+  `ICapability` dispatcher, this is now the second hand-rolled skill-to-impl
+  dispatch inside Foragent. A framework helper (e.g. `AddRockBotCapability<T>`,
+  `AddRockBotCapabilityVariant<T>`) would fold both patterns down.
+- **No framework hook for per-tenant broker scoping.** Spec §7.5 calls for
+  tenant identity from A2A caller, not request payload. The RockBot framework
+  exposes the caller identity on `AgentTaskContext.MessageContext.Agent`, but
+  there's no established pattern for a broker to receive it. Today Foragent's
+  broker ignores tenancy; see "Deferred" below.
+- **Playwright string-selector dialect is regex-free.** The first cut of
+  `BlueskySitePoster` used `role=button[name=/sign in/i]`-style selectors;
+  Playwright's string parser does not accept regex. `getByRole(…, new() { NameRegex = … })`
+  works on `IPage` but not in `WaitForSelectorAsync` string form. Switched to
+  exact attribute matches. Worth a note in a future `RockBot.Browser` helper if
+  one materialises, so consumers don't repeat the mistake.
+- **`contenteditable` + Playwright `FillAsync` works for text but not rich
+  content.** Bluesky's real composer uses a ProseMirror editor that rejects
+  naive `FillAsync`. Our selector targets the contenteditable host, which the
+  test fake also uses. Real-world posting may require typing or scripting the
+  editor — when we exercise against real bsky.app we'll learn whether this
+  path holds. Flagged here so the next session doesn't chase it as a new bug.
+
+### Deferred (tracked so we don't lose them)
+
+All of these are on the step-4 line in spec §9.1 but intentionally punted to
+later iterations to keep the PR reviewable. Each is wired into the current
+design in a way that allows adding it without breaking changes:
+
+- **Storage state as a credential (spec §6.5).** `BlueskySitePoster` re-auths
+  every post. The fix is to call `IBrowserContext.StorageStateAsync()` after
+  successful login, persist it back through the broker under a new `Kind`
+  (`storage-state`), and re-apply via `Browser.NewContextAsync(new { StorageState = … })`
+  on subsequent runs. Requires either an `IBrowserSessionFactory.CreateSessionAsync(storageState)`
+  overload or a session-level "import" method. Keeping the broker
+  value-shape as `IReadOnlyDictionary<string,string>` means storage state
+  (a JSON blob) just becomes `Values["json"]`.
+- **2FA via A2A `input-required` (spec §6.6).** RockBot's framework exposes
+  the `input-required` state on `AgentTaskContext`, but we haven't wired
+  BlueskySitePoster to detect a 2FA prompt and suspend. App passwords bypass
+  2FA for now, which is why spec §6.6 recommends them — but the input-required
+  path is what unlocks non-app-password sites.
+- **Kubernetes secrets broker (spec §6.3).** Only `InMemoryCredentialBroker`
+  is implemented; prod deploy will need a `KubernetesCredentialBroker` reading
+  from a scoped service account. No deployment target exists yet (spec §9.2).
+- **Per-tenant credential namespaces (spec §7.5).** `ICredentialBroker.ResolveAsync`
+  takes only the credential id. A production broker should also take a tenant
+  id derived from `AgentTaskContext.MessageContext.Agent`, and scope its
+  lookup. Foragent is currently single-tenant by omission.
+- **Audit logging (spec §7.4).** We log capability invocation + credential id
+  via `ILogger`, but there's no dedicated audit sink separate from diagnostic
+  logging. Spec §7.4 calls for a per-tenant audit log with structured fields;
+  current logs are prose.
+- **Domain allowlists (spec §7.1).** `post-to-site` hard-codes the Bluesky
+  login URL; no request-level or tenant-level allowlist. When we add a second
+  poster, promote the URL to config and add an allowlist check around
+  `IBrowserSession.OpenPageAsync`.
+
 ## Step 3 — Second capability (extract-structured-data)
 
 - **A2A metadata pass-through.** Filed as [rockbot#281](https://github.com/MarimerLLC/rockbot/issues/281),

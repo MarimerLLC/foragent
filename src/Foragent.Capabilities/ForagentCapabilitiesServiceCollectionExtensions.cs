@@ -1,3 +1,4 @@
+using Foragent.Capabilities.SitePosting;
 using Microsoft.Extensions.DependencyInjection;
 using RockBot.A2A;
 
@@ -14,6 +15,8 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
     {
         services.AddScoped<ICapability, FetchPageTitleCapability>();
         services.AddScoped<ICapability, ExtractStructuredDataCapability>();
+        services.AddScoped<ICapability, PostToSiteCapability>();
+        services.AddScoped<ISitePoster, BlueskySitePoster>();
         services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
         return services;
     }
@@ -30,6 +33,7 @@ public static class ForagentCapabilities
     public static IReadOnlyList<AgentSkill> Skills { get; } =
     [
         FetchPageTitleCapability.SkillDefinition,
-        ExtractStructuredDataCapability.SkillDefinition
+        ExtractStructuredDataCapability.SkillDefinition,
+        PostToSiteCapability.SkillDefinition
     ];
 }

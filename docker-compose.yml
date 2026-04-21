@@ -70,6 +70,15 @@ services:
       ForagentLlm__Endpoint: ${FORAGENT_LLM_ENDPOINT:?FORAGENT_LLM_ENDPOINT is required}
       ForagentLlm__ModelId: ${FORAGENT_LLM_MODEL_ID:?FORAGENT_LLM_MODEL_ID is required}
       ForagentLlm__ApiKey: ${FORAGENT_LLM_API_KEY:?FORAGENT_LLM_API_KEY is required}
+      # Optional Bluesky credential for post-to-site. Callers invoke post-to-site
+      # with credentialId: "bluesky-rocky". Flat id (no slashes) because env-var
+      # keys use __ to separate config path segments — ids with slashes work via
+      # appsettings / user-secrets but not via env vars. Leave unset to disable;
+      # post-to-site will report "Credential '…' is not configured."
+      # For prod, replace InMemoryCredentialBroker with k8s-secrets.
+      Credentials__bluesky-rocky__Kind: username-password
+      Credentials__bluesky-rocky__Values__identifier: ${FORAGENT_BLUESKY_IDENTIFIER:-}
+      Credentials__bluesky-rocky__Values__password: ${FORAGENT_BLUESKY_APP_PASSWORD:-}
 
   rockbot-init:
     image: rockylhotka/rockbot-agent:latest

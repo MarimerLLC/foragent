@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Foragent is at **milestone 3** (spec §9.1): two capabilities now — `fetch-page-title` (step 2, Playwright) and `extract-structured-data` (step 3, Playwright + LLM). Credentials are milestone 4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
+Foragent is at **milestone 4** (spec §9.1): three capabilities now — `fetch-page-title` (step 2, Playwright), `extract-structured-data` (step 3, Playwright + LLM), and `post-to-site` (step 4, Playwright + credential broker). The credential broker + first `ISitePoster` (Bluesky) are in. Storage-state persistence, 2FA input-required flow, k8s-secrets broker, and per-tenant credential namespaces are all deferred — tracked in `docs/framework-feedback.md` step 4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
 
 ## Build / test
 
@@ -73,7 +73,7 @@ Foragent requires an LLM (for `extract-structured-data` and future capabilities)
 
 ## Browser
 
-`Foragent.Browser` wraps Playwright. `AddForagentBrowser()` in `Foragent.Agent/Program.cs` registers `PlaywrightBrowserHost` (`IHostedService` owning one shared Chromium per process) and `IBrowserSessionFactory` (hands out a fresh `IBrowserContext` per A2A task — isolation guarantee from spec §3.5). `IBrowserSession` exposes `FetchPageTitleAsync` and `CapturePageSnapshotAsync`; the snapshot uses Chromium's aria-snapshot (via `Locator.AriaSnapshotAsync`) and falls back to `<body>` inner text when the tree is empty. `Foragent.Browser` has `InternalsVisibleTo("Foragent.Browser.Tests")` so tests drive the real `PlaywrightBrowserSessionFactory` without promoting its implementation types to public.
+`Foragent.Browser` wraps Playwright. `AddForagentBrowser()` in `Foragent.Agent/Program.cs` registers `PlaywrightBrowserHost` (`IHostedService` owning one shared Chromium per process) and `IBrowserSessionFactory` (hands out a fresh `IBrowserContext` per A2A task — isolation guarantee from spec §3.5). `IBrowserSession` exposes `FetchPageTitleAsync` / `CapturePageSnapshotAsync` for one-shot reads, plus `OpenPageAsync` → `IBrowserPage` (navigate / fill / click / wait / read) for multi-step flows like login + post. The snapshot uses Chromium's aria-snapshot (via `Locator.AriaSnapshotAsync`) and falls back to `<body>` inner text when the tree is empty. Selectors passed to `IBrowserPage` use Playwright's string-selector dialect (CSS + `role=role[name="..."]`); **regex is not accepted in string form**, use exact attribute matches. `Foragent.Browser` has `InternalsVisibleTo("Foragent.Browser.Tests")` so tests drive the real `PlaywrightBrowserSessionFactory` without promoting its implementation types to public.
 
 ## Capabilities
 
@@ -82,7 +82,14 @@ Foragent requires an LLM (for `extract-structured-data` and future capabilities)
 - Each capability implements `ICapability` — owns its own `AgentSkill` metadata (exposed as a static `SkillDefinition`) and its own `ExecuteAsync` logic.
 - `ForagentTaskHandler` is a pure dispatcher that resolves `IEnumerable<ICapability>` from DI and routes on `SkillId`. **Do not add skill-specific logic to the handler.** New capabilities go in new `ICapability` classes.
 - `ForagentCapabilities.Skills` (static array) is the single source of truth for advertised skills — both the bus-side `AgentCard.Skills` and the HTTP gateway's `opts.Skills` read from it.
-- `CapabilityInput.Parse` is the input-parsing shim until rockbot#281 ships real metadata pass-through. Capabilities that need a URL + description accept a `{"url":"...","description":"..."}` JSON blob in the single text part today; capabilities that only need a URL also accept a bare URL string. When the framework change lands, swap this helper — capability contracts don't need to change.
+- `CapabilityInput.Parse` is the shared URL + description shim used by `fetch-page-title` and `extract-structured-data`. Capabilities with different input shapes (e.g. `post-to-site` needing `site` / `credentialId` / `content`) parse their own input near the capability — see `PostToSiteInput` in `PostToSiteCapability.cs`. Don't overload `CapabilityInput` for unrelated shapes.
+- `post-to-site` dispatches to an `ISitePoster` keyed on `Site` (in `SitePosting/`). `BlueskySitePoster` is the only implementation today; add new sites by registering another `ISitePoster` in `AddForagentCapabilities()`. The capability never echoes exception messages from posters back to callers — they may contain credential material; operators read the full exception in logs.
+
+## Credentials
+
+`Foragent.Credentials` ships `ICredentialBroker` + `CredentialReference(Id, Kind, Values)`. `AddForagentCredentials(configuration, "Credentials")` wires an `InMemoryCredentialBroker` bound to the config section — dev/test only per spec §6.3. Populate via user-secrets (`dotnet user-secrets set "Credentials:bluesky-rocky:Kind" username-password`, etc.), never appsettings.json. **Never log `CredentialReference.Values`**, never include them in A2A responses, never embed them in exception messages. `CredentialReference.ToString()` deliberately does not expose values. Missing credentials throw `CredentialNotFoundException` carrying only the id.
+
+Credential ids are free-form via user-secrets/appsettings (slashes are fine — `rockbot/social/bluesky-rocky` matches spec §6.2's example). Via env vars / docker-compose, ids must be single-segment: `__` separates config-path segments, so `Credentials__rockbot__social__bluesky-rocky__Kind` becomes the config path `Credentials:rockbot:social:bluesky-rocky:Kind` and fails to bind as an id. Stick with flat ids (`bluesky-rocky`) in the compose harness.
 
 ## Conventions
 
