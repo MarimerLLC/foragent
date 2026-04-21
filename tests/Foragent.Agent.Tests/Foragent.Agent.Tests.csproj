@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foragent.Agent\Foragent.Agent.csproj" />
+    <ProjectReference Include="..\..\src\Foragent.Capabilities\Foragent.Capabilities.csproj" />
   </ItemGroup>
 </Project>

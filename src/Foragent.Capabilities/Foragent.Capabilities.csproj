@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\Foragent.Browser\Foragent.Browser.csproj" />
-    <ProjectReference Include="..\Foragent.Credentials\Foragent.Credentials.csproj" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="RockBot.A2A" />
+    <PackageReference Include="RockBot.A2A.Abstractions" />
   </ItemGroup>
 </Project>
