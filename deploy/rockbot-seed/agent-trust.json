@@ -2,7 +2,7 @@
   {
     "agentId": "Foragent",
     "level": 4,
-    "approvedSkills": ["fetch-page-title"],
+    "approvedSkills": ["fetch-page-title", "extract-structured-data"],
     "firstSeen": "2026-04-21T00:00:00+00:00",
     "lastInteraction": "2026-04-21T00:00:00+00:00",
     "interactionCount": 0

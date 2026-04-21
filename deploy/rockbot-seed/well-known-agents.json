@@ -1,7 +1,7 @@
 [
   {
     "agentName": "Foragent",
-    "description": "Browser agent — fetches page titles over HTTP A2A.",
+    "description": "Browser agent — navigates pages with Chromium and exposes task-level skills over HTTP A2A.",
     "version": "1.0",
     "url": "http://foragent:8080",
     "protocolVersion": "1.0",
@@ -11,7 +11,12 @@
       {
         "id": "fetch-page-title",
         "name": "Fetch Page Title",
-        "description": "Fetches a URL and returns the contents of its <title> element."
+        "description": "Navigate to a URL with a real browser and return the contents of its <title> element."
+      },
+      {
+        "id": "extract-structured-data",
+        "name": "Extract Structured Data",
+        "description": "Navigate to a URL and extract data matching a natural-language description, returning JSON. Input the target URL and a description of what to extract."
       }
     ]
   }

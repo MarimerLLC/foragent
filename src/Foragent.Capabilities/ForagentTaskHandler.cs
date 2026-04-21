@@ -1,18 +1,20 @@
-using Foragent.Browser;
 using Microsoft.Extensions.Logging;
 using RockBot.A2A;
 
 namespace Foragent.Capabilities;
 
 /// <summary>
-/// Dispatches incoming A2A task requests to the matching Foragent capability by skill id.
-/// Step 2 still only ships <c>fetch-page-title</c>; the switch grows as new capabilities land.
+/// Pure dispatcher. Resolves the set of registered <see cref="ICapability"/>
+/// instances and routes an incoming task to the one whose <see cref="ICapability.SkillId"/>
+/// matches <see cref="AgentTaskRequest.Skill"/>. Unknown skills return a user-
+/// facing error rather than throwing, so the A2A bridge still sees a result.
 /// </summary>
 public sealed class ForagentTaskHandler(
-    IBrowserSessionFactory browserFactory,
+    IEnumerable<ICapability> capabilities,
     ILogger<ForagentTaskHandler> logger) : IAgentTaskHandler
 {
-    public const string FetchPageTitleSkillId = "fetch-page-title";
+    private readonly Dictionary<string, ICapability> _bySkill =
+        capabilities.ToDictionary(c => c.SkillId, StringComparer.OrdinalIgnoreCase);
 
     public async Task<AgentTaskResult> HandleTaskAsync(
         AgentTaskRequest request, AgentTaskContext context)
@@ -29,66 +31,14 @@ public sealed class ForagentTaskHandler(
             State = AgentTaskState.Working
         }, ct);
 
-        return request.Skill switch
+        if (!_bySkill.TryGetValue(request.Skill, out var capability))
         {
-            FetchPageTitleSkillId => await FetchPageTitleAsync(request, ct),
-            _ => Error(request, $"Unknown skill '{request.Skill}'.")
-        };
+            var known = string.Join(", ", _bySkill.Keys.OrderBy(k => k));
+            return CapabilityResult.Error(
+                request,
+                $"Unknown skill '{request.Skill}'. Known skills: {known}");
+        }
+
+        return await capability.ExecuteAsync(request, context);
     }
-
-    private async Task<AgentTaskResult> FetchPageTitleAsync(
-        AgentTaskRequest request, CancellationToken ct)
-    {
-        var input = request.Message.Parts
-            .Where(p => p.Kind == "text")
-            .Select(p => p.Text)
-            .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))
-            ?.Trim();
-
-        if (string.IsNullOrEmpty(input)
-            || !Uri.TryCreate(input, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return Error(request, "Provide an absolute http(s) URL as the task message.");
-        }
-
-        try
-        {
-            await using var session = await browserFactory.CreateSessionAsync(ct);
-            var title = await session.FetchPageTitleAsync(uri, ct);
-            var text = string.IsNullOrEmpty(title) ? "(no title)" : title;
-
-            logger.LogInformation("Fetched title from {Url}: {Title}", uri, text);
-            return Completed(request, text);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Fetch failed for {Url}", uri);
-            return Error(request, $"Fetch failed: {ex.Message}");
-        }
-    }
-
-    private static AgentTaskResult Completed(AgentTaskRequest request, string text) => new()
-    {
-        TaskId = request.TaskId,
-        ContextId = request.ContextId,
-        State = AgentTaskState.Completed,
-        Message = new AgentMessage
-        {
-            Role = "agent",
-            Parts = [new AgentMessagePart { Kind = "text", Text = text }]
-        }
-    };
-
-    private static AgentTaskResult Error(AgentTaskRequest request, string message) => new()
-    {
-        TaskId = request.TaskId,
-        ContextId = request.ContextId,
-        State = AgentTaskState.Completed,
-        Message = new AgentMessage
-        {
-            Role = "agent",
-            Parts = [new AgentMessagePart { Kind = "text", Text = message }]
-        }
-    };
 }

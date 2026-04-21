@@ -53,3 +53,24 @@ feedback. Capture it."
 - **Still no resolution on the single-handler-per-agent shape** (flagged in step 1). Growing
   beyond step 2 will make this more painful; the `switch (request.Skill)` in
   `ForagentTaskHandler` is already starting to accumulate per-skill setup.
+
+## Step 3 — Second capability (extract-structured-data)
+
+- **A2A metadata pass-through.** Filed as [rockbot#281](https://github.com/MarimerLLC/rockbot/issues/281),
+  **resolved** in RockBot 0.8.5 (commit `08e86b9`). `AgentMessage.Metadata` and
+  `AgentTaskRequest.Metadata` are now `IReadOnlyDictionary<string, string>?`, and the bridge
+  maps request- and message-level metadata in both directions (plus non-text parts).
+  Foragent's `CapabilityInput.Parse` now reads metadata first and falls back to the JSON /
+  bare-URL / embedded-URL paths for back-compat with older callers.
+- **Single-handler-per-agent resolved in-repo, not upstream.** We introduced `ICapability`
+  inside Foragent and rewrote `ForagentTaskHandler` as a pure dispatcher that resolves
+  `IEnumerable<ICapability>` from DI and routes on `SkillId`. It works but it's *Foragent's*
+  dispatcher — every RockBot-based agent will reinvent this. Candidate for a
+  `RockBot.A2A.Capability` (or similar) helper in the framework: a base class / extension
+  method that registers per-skill handlers and auto-wires dispatch. Would also kill the
+  duplicate agent-card bookkeeping (we now build `opts.Card.Skills` and `opts.Skills`
+  from one static list).
+- **`AgentCard` lives in two places on the wire.** `A2AOptions.Card.Skills` (bus-side
+  discovery) and `GatewayOptions.Skills` (HTTP agent-card endpoint) are independent. Our
+  Program.cs populates both from a single `ForagentCapabilities.Skills` array — a workaround,
+  not a fix. The framework should treat one as authoritative and derive the other.

@@ -1,0 +1,35 @@
+using Microsoft.Extensions.DependencyInjection;
+using RockBot.A2A;
+
+namespace Foragent.Capabilities;
+
+public static class ForagentCapabilitiesServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the Foragent capability set plus the dispatcher. Add new
+    /// capabilities in both places: the DI registration below and
+    /// <see cref="ForagentCapabilities.Skills"/> so the agent card advertises them.
+    /// </summary>
+    public static IServiceCollection AddForagentCapabilities(this IServiceCollection services)
+    {
+        services.AddScoped<ICapability, FetchPageTitleCapability>();
+        services.AddScoped<ICapability, ExtractStructuredDataCapability>();
+        services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
+        return services;
+    }
+}
+
+/// <summary>
+/// Single source of truth for the skills Foragent advertises. The dispatcher
+/// in <see cref="ForagentTaskHandler"/> reaches the instances via DI; the agent
+/// card at startup reads this static list to avoid duplicating skill metadata
+/// in <c>appsettings.json</c>.
+/// </summary>
+public static class ForagentCapabilities
+{
+    public static IReadOnlyList<AgentSkill> Skills { get; } =
+    [
+        FetchPageTitleCapability.SkillDefinition,
+        ExtractStructuredDataCapability.SkillDefinition
+    ];
+}

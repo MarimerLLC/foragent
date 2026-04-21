@@ -6,6 +6,8 @@
     <PackageReference Include="A2A" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
     <PackageReference Include="RockBot.A2A" />
     <PackageReference Include="RockBot.A2A.Abstractions" />
     <PackageReference Include="RockBot.A2A.Gateway" />
