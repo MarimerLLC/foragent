@@ -14,6 +14,31 @@ public interface IBrowserSession : IAsyncDisposable
     /// does not expose one.
     /// </summary>
     Task<string?> FetchPageTitleAsync(Uri url, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Navigates to <paramref name="url"/> and returns a compact,
+    /// LLM-consumable representation of the page. Uses the Chromium
+    /// accessibility tree when available (spec §3.2 — the right grain for an
+    /// extraction prompt); falls back to <c>&lt;body&gt;</c> inner text when
+    /// the accessibility snapshot is empty or unavailable. Includes the page
+    /// title at the top so the LLM has enough context to reason.
+    /// </summary>
+    Task<PageSnapshot> CapturePageSnapshotAsync(Uri url, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A compact rendering of a page suitable for LLM prompting.
+/// </summary>
+/// <param name="Url">The final URL after any redirects.</param>
+/// <param name="Title">Page title, or <c>null</c>.</param>
+/// <param name="Content">Accessibility-tree rendering or inner text.</param>
+/// <param name="Source">Whether the content came from the accessibility tree or from a text fallback.</param>
+public sealed record PageSnapshot(Uri Url, string? Title, string Content, PageSnapshotSource Source);
+
+public enum PageSnapshotSource
+{
+    Accessibility,
+    InnerText
 }
 
 /// <summary>

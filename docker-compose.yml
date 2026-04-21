@@ -65,6 +65,11 @@ services:
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
+      # LLM required for the extract-structured-data capability. Namespaced so
+      # Foragent can point at a different model than the RockBot side.
+      ForagentLlm__Endpoint: ${FORAGENT_LLM_ENDPOINT:?FORAGENT_LLM_ENDPOINT is required}
+      ForagentLlm__ModelId: ${FORAGENT_LLM_MODEL_ID:?FORAGENT_LLM_MODEL_ID is required}
+      ForagentLlm__ApiKey: ${FORAGENT_LLM_API_KEY:?FORAGENT_LLM_API_KEY is required}
 
   rockbot-init:
     image: rockylhotka/rockbot-agent:latest

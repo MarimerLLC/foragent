@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Foragent is at **milestone 2** (spec §9.1): `fetch-page-title` now goes through real Playwright Chromium instead of `HttpClient` + regex. Credentials and the remaining capabilities are milestones 3–4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
+Foragent is at **milestone 3** (spec §9.1): two capabilities now — `fetch-page-title` (step 2, Playwright) and `extract-structured-data` (step 3, Playwright + LLM). Credentials are milestone 4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
 
 ## Build / test
 
@@ -69,11 +69,20 @@ Key framework pieces Foragent uses today:
 - `RockBot.A2A.IAgentTaskHandler` — the single per-agent extension point. `ForagentTaskHandler` (in `Foragent.Capabilities`) implements this and dispatches on `request.Skill`.
 - `RockBot.A2A.Gateway.AddA2AHttpGateway` + `MapA2AHttpGateway` — the in-process HTTP surface. Published as NuGet in RockBot 0.8.4 (see `docs/framework-feedback.md`).
 
-`EchoChatClient` exists only because `AddRockBotChatClient` is mandatory even for non-LLM agents; Foragent v1 never calls the LLM. Delete it once the framework supports opting out.
+Foragent requires an LLM (for `extract-structured-data` and future capabilities). The same `IChatClient` is registered both as a singleton (capabilities inject it directly) and via `AddRockBotChatClient` (satisfies the framework's mandatory registration). Config lives under `ForagentLlm` — separate from any rockbot-side `LLM` config so the two agents can point at different models. Program.cs fails fast at startup if `ForagentLlm:Endpoint`/`ModelId`/`ApiKey` are missing.
 
 ## Browser
 
-`Foragent.Browser` wraps Playwright. `AddForagentBrowser()` in `Foragent.Agent/Program.cs` registers `PlaywrightBrowserHost` (`IHostedService` owning one shared Chromium per process) and `IBrowserSessionFactory` (hands out a fresh `IBrowserContext` per A2A task — isolation guarantee from spec §3.5). The Playwright version pinned in `Directory.Packages.props` must match the `mcr.microsoft.com/playwright/dotnet:v<X>-noble` tag in the `Dockerfile`. `Foragent.Browser` has `InternalsVisibleTo("Foragent.Browser.Tests")` so tests drive the real `PlaywrightBrowserSessionFactory` without promoting its implementation types to public.
+`Foragent.Browser` wraps Playwright. `AddForagentBrowser()` in `Foragent.Agent/Program.cs` registers `PlaywrightBrowserHost` (`IHostedService` owning one shared Chromium per process) and `IBrowserSessionFactory` (hands out a fresh `IBrowserContext` per A2A task — isolation guarantee from spec §3.5). `IBrowserSession` exposes `FetchPageTitleAsync` and `CapturePageSnapshotAsync`; the snapshot uses Chromium's aria-snapshot (via `Locator.AriaSnapshotAsync`) and falls back to `<body>` inner text when the tree is empty. `Foragent.Browser` has `InternalsVisibleTo("Foragent.Browser.Tests")` so tests drive the real `PlaywrightBrowserSessionFactory` without promoting its implementation types to public.
+
+## Capabilities
+
+`Foragent.Capabilities` is the product surface. The pattern:
+
+- Each capability implements `ICapability` — owns its own `AgentSkill` metadata (exposed as a static `SkillDefinition`) and its own `ExecuteAsync` logic.
+- `ForagentTaskHandler` is a pure dispatcher that resolves `IEnumerable<ICapability>` from DI and routes on `SkillId`. **Do not add skill-specific logic to the handler.** New capabilities go in new `ICapability` classes.
+- `ForagentCapabilities.Skills` (static array) is the single source of truth for advertised skills — both the bus-side `AgentCard.Skills` and the HTTP gateway's `opts.Skills` read from it.
+- `CapabilityInput.Parse` is the input-parsing shim until rockbot#281 ships real metadata pass-through. Capabilities that need a URL + description accept a `{"url":"...","description":"..."}` JSON blob in the single text part today; capabilities that only need a URL also accept a bare URL string. When the framework change lands, swap this helper — capability contracts don't need to change.
 
 ## Conventions
 
