@@ -156,6 +156,42 @@ public class ExtractStructuredDataCapabilityTests
     }
 
     [Fact]
+    public async Task AcceptsInputs_FromMetadata()
+    {
+        Uri? capturedUrl = null;
+        var factory = new StubBrowserSessionFactory
+        {
+            SnapshotResponder = (url, _) =>
+            {
+                capturedUrl = url;
+                return Task.FromResult(new PageSnapshot(url, null, "content", PageSnapshotSource.Accessibility));
+            }
+        };
+        string? descriptionInPrompt = null;
+        var chat = new StubChatClient((msgs, _) =>
+        {
+            descriptionInPrompt = msgs.First(m => m.Role == ChatRole.User).Text;
+            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "{}")));
+        });
+        var capability = new ExtractStructuredDataCapability(
+            factory, chat, NullLogger<ExtractStructuredDataCapability>.Instance);
+        var (context, _) = TestContext.Build();
+        var request = TestContext.RequestWithMetadata(
+            "extract-structured-data",
+            messageMetadata: new Dictionary<string, string>
+            {
+                ["url"] = "https://metadata.example",
+                ["description"] = "the shipping address"
+            });
+
+        var result = await capability.ExecuteAsync(request, context);
+
+        Assert.Equal(AgentTaskState.Completed, result.State);
+        Assert.Equal(new Uri("https://metadata.example"), capturedUrl);
+        Assert.Contains("the shipping address", descriptionInPrompt);
+    }
+
+    [Fact]
     public async Task ReportsError_OnEmptyLlmResponse()
     {
         var factory = new StubBrowserSessionFactory();

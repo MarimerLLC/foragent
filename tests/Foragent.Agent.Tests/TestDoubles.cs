@@ -27,6 +27,30 @@ internal static class TestContext
         };
     }
 
+    public static AgentTaskRequest RequestWithMetadata(
+        string skill,
+        string? text = null,
+        IReadOnlyDictionary<string, string>? messageMetadata = null,
+        IReadOnlyDictionary<string, string>? requestMetadata = null)
+    {
+        var parts = text is null
+            ? Array.Empty<AgentMessagePart>()
+            : [new AgentMessagePart { Kind = "text", Text = text }];
+        return new AgentTaskRequest
+        {
+            TaskId = Guid.NewGuid().ToString(),
+            ContextId = "ctx",
+            Skill = skill,
+            Metadata = requestMetadata,
+            Message = new AgentMessage
+            {
+                Role = "user",
+                Parts = parts,
+                Metadata = messageMetadata
+            }
+        };
+    }
+
     public static (AgentTaskContext Context, StatusCapture Capture) Build()
     {
         var capture = new StatusCapture();

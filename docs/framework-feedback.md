@@ -56,14 +56,12 @@ feedback. Capture it."
 
 ## Step 3 — Second capability (extract-structured-data)
 
-- **A2A metadata and non-text parts don't round-trip.** `RockBotBridgeHandler` only
-  propagates the text payload from an incoming A2A request onto the bus; both request-level
-  and message-level `metadata` (and non-text `parts`) are dropped. `RockBot.A2A.AgentMessage`
-  and `AgentTaskRequest` have no `Metadata` property either. Filed as
-  [rockbot#281](https://github.com/MarimerLLC/rockbot/issues/281). Foragent is shipping a
-  shim (`CapabilityInput.Parse`) that accepts `{"url":"...","description":"..."}` in the
-  single text part; when the framework change lands, the shim swaps for a real metadata
-  read and capability contracts stay stable.
+- **A2A metadata pass-through.** Filed as [rockbot#281](https://github.com/MarimerLLC/rockbot/issues/281),
+  **resolved** in RockBot 0.8.5 (commit `08e86b9`). `AgentMessage.Metadata` and
+  `AgentTaskRequest.Metadata` are now `IReadOnlyDictionary<string, string>?`, and the bridge
+  maps request- and message-level metadata in both directions (plus non-text parts).
+  Foragent's `CapabilityInput.Parse` now reads metadata first and falls back to the JSON /
+  bare-URL / embedded-URL paths for back-compat with older callers.
 - **Single-handler-per-agent resolved in-repo, not upstream.** We introduced `ICapability`
   inside Foragent and rewrote `ForagentTaskHandler` as a pure dispatcher that resolves
   `IEnumerable<ICapability>` from DI and routes on `SkillId`. It works but it's *Foragent's*
