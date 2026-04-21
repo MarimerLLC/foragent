@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using Foragent.Browser;
 using Microsoft.Extensions.Logging;
 using RockBot.A2A;
 
@@ -6,16 +6,13 @@ namespace Foragent.Capabilities;
 
 /// <summary>
 /// Dispatches incoming A2A task requests to the matching Foragent capability by skill id.
-/// Step 1 only ships <c>fetch-page-title</c>; the switch grows as new capabilities land.
+/// Step 2 still only ships <c>fetch-page-title</c>; the switch grows as new capabilities land.
 /// </summary>
-public sealed partial class ForagentTaskHandler(
-    HttpClient httpClient,
+public sealed class ForagentTaskHandler(
+    IBrowserSessionFactory browserFactory,
     ILogger<ForagentTaskHandler> logger) : IAgentTaskHandler
 {
     public const string FetchPageTitleSkillId = "fetch-page-title";
-
-    [GeneratedRegex("<title[^>]*>([^<]*)</title>", RegexOptions.IgnoreCase)]
-    private static partial Regex TitleRegex();
 
     public async Task<AgentTaskResult> HandleTaskAsync(
         AgentTaskRequest request, AgentTaskContext context)
@@ -57,16 +54,12 @@ public sealed partial class ForagentTaskHandler(
 
         try
         {
-            using var response = await httpClient.GetAsync(uri, ct);
-            response.EnsureSuccessStatusCode();
-            var html = await response.Content.ReadAsStringAsync(ct);
-            var match = TitleRegex().Match(html);
-            var title = match.Success
-                ? System.Net.WebUtility.HtmlDecode(match.Groups[1].Value).Trim()
-                : "(no title)";
+            await using var session = await browserFactory.CreateSessionAsync(ct);
+            var title = await session.FetchPageTitleAsync(uri, ct);
+            var text = string.IsNullOrEmpty(title) ? "(no title)" : title;
 
-            logger.LogInformation("Fetched title from {Url}: {Title}", uri, title);
-            return Completed(request, title);
+            logger.LogInformation("Fetched title from {Url}: {Title}", uri, text);
+            return Completed(request, text);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -16,6 +16,7 @@
     <PackageReference Include="RockBot.Messaging.RabbitMQ" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Foragent.Browser\Foragent.Browser.csproj" />
     <ProjectReference Include="..\Foragent.Capabilities\Foragent.Capabilities.csproj" />
   </ItemGroup>
 </Project>

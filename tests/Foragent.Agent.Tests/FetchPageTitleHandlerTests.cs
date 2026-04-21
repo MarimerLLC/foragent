@@ -1,5 +1,4 @@
-using System.Net;
-using System.Text;
+using Foragent.Browser;
 using Foragent.Capabilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,10 +12,10 @@ namespace Foragent.Agent.Tests;
 public class FetchPageTitleHandlerTests
 {
     [Fact]
-    public async Task ReturnsTitle_FromHtml()
+    public async Task ReturnsTitle_FromBrowser()
     {
-        var (handler, _) = CreateHandler(
-            (req, ct) => Respond(HttpStatusCode.OK, "<html><head><title>Hello World</title></head></html>"));
+        var factory = new StubBrowserSessionFactory((_, _) => Task.FromResult<string?>("Hello World"));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "fetch-page-title", "https://example.com");
 
@@ -25,21 +24,10 @@ public class FetchPageTitleHandlerTests
     }
 
     [Fact]
-    public async Task DecodesHtmlEntities()
+    public async Task ReportsNoTitle_WhenBrowserReturnsNull()
     {
-        var (handler, _) = CreateHandler(
-            (req, ct) => Respond(HttpStatusCode.OK, "<title>AT&amp;T &mdash; Home</title>"));
-
-        var result = await InvokeAsync(handler, "fetch-page-title", "https://example.com");
-
-        Assert.Equal("AT&T \u2014 Home", TextOf(result.Result));
-    }
-
-    [Fact]
-    public async Task ReportsNoTitle_WhenTitleMissing()
-    {
-        var (handler, _) = CreateHandler(
-            (req, ct) => Respond(HttpStatusCode.OK, "<html><body>no head</body></html>"));
+        var factory = new StubBrowserSessionFactory((_, _) => Task.FromResult<string?>(null));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "fetch-page-title", "https://example.com");
 
@@ -47,26 +35,28 @@ public class FetchPageTitleHandlerTests
     }
 
     [Fact]
-    public async Task ReportsError_OnNon2xx()
+    public async Task ReportsError_WhenBrowserThrows()
     {
-        var (handler, _) = CreateHandler(
-            (req, ct) => Respond(HttpStatusCode.NotFound, "not found"));
+        var factory = new StubBrowserSessionFactory((_, _) =>
+            Task.FromException<string?>(new InvalidOperationException("boom")));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "fetch-page-title", "https://example.com");
 
         Assert.Equal(AgentTaskState.Completed, result.Result.State);
-        Assert.Contains("Fetch failed", TextOf(result.Result));
+        Assert.Contains("Fetch failed: boom", TextOf(result.Result));
     }
 
     [Fact]
-    public async Task RejectsNonAbsoluteUrl_WithoutHttpCall()
+    public async Task RejectsNonAbsoluteUrl_WithoutCreatingSession()
     {
         var calls = 0;
-        var (handler, _) = CreateHandler((req, ct) =>
+        var factory = new StubBrowserSessionFactory((_, _) =>
         {
             calls++;
-            return Respond(HttpStatusCode.OK, string.Empty);
+            return Task.FromResult<string?>("ignored");
         });
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "fetch-page-title", "not a url");
 
@@ -77,7 +67,8 @@ public class FetchPageTitleHandlerTests
     [Fact]
     public async Task RejectsUnknownSkill()
     {
-        var (handler, _) = CreateHandler((req, ct) => Respond(HttpStatusCode.OK, string.Empty));
+        var factory = new StubBrowserSessionFactory((_, _) => Task.FromResult<string?>("unused"));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "other-skill", "https://example.com");
 
@@ -87,8 +78,8 @@ public class FetchPageTitleHandlerTests
     [Fact]
     public async Task PublishesWorkingStatus_BeforeResult()
     {
-        var (handler, _) = CreateHandler(
-            (req, ct) => Respond(HttpStatusCode.OK, "<title>t</title>"));
+        var factory = new StubBrowserSessionFactory((_, _) => Task.FromResult<string?>("t"));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
 
         var result = await InvokeAsync(handler, "fetch-page-title", "https://example.com");
 
@@ -97,15 +88,19 @@ public class FetchPageTitleHandlerTests
         Assert.Equal(AgentTaskState.Completed, result.Result.State);
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────────
-
-    private static (ForagentTaskHandler handler, StatusCapture capture) CreateHandler(
-        Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> respond)
+    [Fact]
+    public async Task DisposesSession_AfterUse()
     {
-        var httpClient = new HttpClient(new StubHttpMessageHandler(respond));
-        var handler = new ForagentTaskHandler(httpClient, NullLogger<ForagentTaskHandler>.Instance);
-        return (handler, new StatusCapture());
+        var factory = new StubBrowserSessionFactory((_, _) => Task.FromResult<string?>("t"));
+        var handler = new ForagentTaskHandler(factory, NullLogger<ForagentTaskHandler>.Instance);
+
+        await InvokeAsync(handler, "fetch-page-title", "https://example.com");
+
+        Assert.Equal(1, factory.SessionsCreated);
+        Assert.Equal(1, factory.SessionsDisposed);
     }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
 
     private static async Task<(StatusCapture Capture, AgentTaskResult Result)> InvokeAsync(
         ForagentTaskHandler handler, string skill, string input)
@@ -146,11 +141,6 @@ public class FetchPageTitleHandlerTests
         return (capture, result);
     }
 
-    private static HttpResponseMessage Respond(HttpStatusCode status, string body) => new(status)
-    {
-        Content = new StringContent(body, Encoding.UTF8, "text/html")
-    };
-
     private static string TextOf(AgentTaskResult result) =>
         result.Message?.Parts.FirstOrDefault(p => p.Kind == "text")?.Text ?? string.Empty;
 
@@ -159,11 +149,30 @@ public class FetchPageTitleHandlerTests
         public List<AgentTaskStatusUpdate> Statuses { get; } = [];
     }
 
-    private sealed class StubHttpMessageHandler(
-        Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> responder) : HttpMessageHandler
+    private sealed class StubBrowserSessionFactory(
+        Func<Uri, CancellationToken, Task<string?>> responder) : IBrowserSessionFactory
     {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(responder(request, cancellationToken));
+        public int SessionsCreated { get; private set; }
+        public int SessionsDisposed { get; private set; }
+
+        public Task<IBrowserSession> CreateSessionAsync(CancellationToken ct = default)
+        {
+            SessionsCreated++;
+            return Task.FromResult<IBrowserSession>(new StubSession(this, responder));
+        }
+
+        private sealed class StubSession(
+            StubBrowserSessionFactory owner,
+            Func<Uri, CancellationToken, Task<string?>> responder) : IBrowserSession
+        {
+            public Task<string?> FetchPageTitleAsync(Uri url, CancellationToken ct = default) =>
+                responder(url, ct);
+
+            public ValueTask DisposeAsync()
+            {
+                owner.SessionsDisposed++;
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

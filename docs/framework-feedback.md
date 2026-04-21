@@ -39,3 +39,17 @@ feedback. Capture it."
   to get the `/.well-known/agent-card.json` endpoint is to also wire the gateway. This is fine
   for Foragent (which wants HTTP anyway), but worth flagging — separating "advertise a card"
   from "host a JSON-RPC bridge" would help bus-only deployments.
+
+## Step 2 — Playwright integration
+
+- **`PlaywrightBrowserHost` as `IHostedService` composes cleanly with `AddRockBotHost`.** No
+  lifecycle conflict; `StartAsync` runs alongside RockBot's hosted services and `StopAsync`
+  disposes Chromium before the message bus is closed. Nothing to change.
+- **Playwright's runtime base image choice is worth calling out.** The spec (§3.4) directs
+  agents to use `mcr.microsoft.com/playwright/dotnet`. We pinned `v1.50.0-noble` to match the
+  `Microsoft.Playwright` NuGet version. Keeping those two version numbers in sync is manual
+  today — would be a nice framework-level helper (e.g. a `RockBot.Browser` package that brings
+  both the NuGet and a dockerfile snippet / base-image recommendation). Not blocking for v1.
+- **Still no resolution on the single-handler-per-agent shape** (flagged in step 1). Growing
+  beyond step 2 will make this more painful; the `switch (request.Skill)` in
+  `ForagentTaskHandler` is already starting to accumulate per-skill setup.

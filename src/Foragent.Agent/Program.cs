@@ -1,4 +1,5 @@
 using Foragent.Agent;
+using Foragent.Browser;
 using Foragent.Capabilities;
 using Microsoft.Extensions.AI;
 using RockBot.A2A;
@@ -51,8 +52,9 @@ builder.Services.AddRockBotHost(agent =>
     });
 
     agent.Services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
-    agent.Services.AddHttpClient<ForagentTaskHandler>();
 });
+
+builder.Services.AddForagentBrowser();
 
 // ── HTTP A2A gateway (in-process) ────────────────────────────────────────────
 
