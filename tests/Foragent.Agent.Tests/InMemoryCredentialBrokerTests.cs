@@ -30,8 +30,8 @@ public class InMemoryCredentialBrokerTests
 
         Assert.Equal("rockbot/social/bluesky-rocky", cred.Id);
         Assert.Equal("username-password", cred.Kind);
-        Assert.Equal("rocky.bsky.social", cred.Require("identifier"));
-        Assert.Equal("app-pass-xyz", cred.Require("password"));
+        Assert.Equal("rocky.bsky.social", cred.RequireText("identifier"));
+        Assert.Equal("app-pass-xyz", cred.RequireText("password"));
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class InMemoryCredentialBrokerTests
     [Fact]
     public void ToString_DoesNotExposeValues()
     {
-        var cred = new CredentialReference(
+        var cred = CredentialReference.FromText(
             "rockbot/social/bluesky-rocky",
             "username-password",
             new Dictionary<string, string> { ["password"] = "super-secret-123" });
@@ -63,7 +63,7 @@ public class InMemoryCredentialBrokerTests
     [Fact]
     public void Require_Throws_WhenFieldMissing()
     {
-        var cred = new CredentialReference(
+        var cred = CredentialReference.FromText(
             "id", "username-password",
             new Dictionary<string, string> { ["identifier"] = "u" });
 
@@ -72,6 +72,37 @@ public class InMemoryCredentialBrokerTests
         // The exception is about a missing field, so it can safely name the key
         // — but it must never echo any existing value.
         Assert.DoesNotContain("u", ex.Message.Split('\'')[^1]);
+    }
+
+    [Fact]
+    public void FromText_RoundTripsThroughUtf8()
+    {
+        var cred = CredentialReference.FromText(
+            "id", "username-password",
+            new Dictionary<string, string>
+            {
+                ["identifier"] = "röcky@例え.test",
+                ["password"] = "\u00a0secret\u2603"
+            });
+
+        // UTF-8 round trip through RequireText should reproduce the original
+        // strings exactly — confirms we don't lose non-ASCII content at the
+        // encoding boundary.
+        Assert.Equal("röcky@例え.test", cred.RequireText("identifier"));
+        Assert.Equal("\u00a0secret\u2603", cred.RequireText("password"));
+    }
+
+    [Fact]
+    public void Values_AreReadOnlyMemoryBytes()
+    {
+        // Sanity check: binary-origin credentials (cert material, storage
+        // state blobs) go through the direct ctor without double-encoding.
+        var bytes = new byte[] { 0x30, 0x82, 0x01, 0x00 };
+        var cred = new CredentialReference(
+            "id", "certificate",
+            new Dictionary<string, ReadOnlyMemory<byte>> { ["der"] = bytes });
+
+        Assert.True(cred.Require("der").Span.SequenceEqual(bytes));
     }
 
     private static IOptionsMonitor<T> Monitor<T>(IOptions<T> options) where T : class =>

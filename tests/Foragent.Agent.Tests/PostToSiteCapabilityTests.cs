@@ -152,7 +152,7 @@ public class PostToSiteCapabilityTests
         {
             Credentials =
             {
-                [id] = new CredentialReference(id, "username-password",
+                [id] = CredentialReference.FromText(id, "username-password",
                     new Dictionary<string, string>
                     {
                         ["identifier"] = "u",

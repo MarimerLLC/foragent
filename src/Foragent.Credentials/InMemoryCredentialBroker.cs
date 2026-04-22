@@ -20,7 +20,12 @@ public sealed class InMemoryCredentialBroker(
         if (!snapshot.Credentials.TryGetValue(credentialId, out var entry))
             throw new CredentialNotFoundException(credentialId);
 
-        return Task.FromResult(new CredentialReference(
+        // Config binding is text-native (appsettings / user-secrets / env vars
+        // all hand us strings). CredentialReference is byte-shaped for backend
+        // generality — k8s Secrets and cert stores are byte-native — so UTF-8
+        // encode at the boundary here rather than pushing encoding into every
+        // consumer.
+        return Task.FromResult(CredentialReference.FromText(
             credentialId,
             entry.Kind,
             entry.Values));

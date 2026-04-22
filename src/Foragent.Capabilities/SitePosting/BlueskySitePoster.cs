@@ -64,8 +64,8 @@ public sealed class BlueskySitePoster : ISitePoster
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Post content cannot be empty.", nameof(content));
 
-        var identifier = credential.Require("identifier");
-        var password = credential.Require("password");
+        var identifier = credential.RequireText("identifier");
+        var password = credential.RequireText("password");
 
         logger.LogInformation(
             "Posting to Bluesky as '{Identifier}' (credential {CredentialId}, {Length} chars)",

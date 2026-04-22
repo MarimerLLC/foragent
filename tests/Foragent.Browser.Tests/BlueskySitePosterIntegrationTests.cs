@@ -30,7 +30,7 @@ public class BlueskySitePosterIntegrationTests(TestPageServerFixture fixture)
         var poster = new BlueskySitePoster(
             NullLogger<BlueskySitePoster>.Instance,
             new Uri(fake.BaseUrl + "/"));
-        var credential = new CredentialReference(
+        var credential = CredentialReference.FromText(
             "rockbot/social/bluesky-rocky",
             "username-password",
             new Dictionary<string, string>
@@ -52,7 +52,7 @@ public class BlueskySitePosterIntegrationTests(TestPageServerFixture fixture)
         var poster = new BlueskySitePoster(
             NullLogger<BlueskySitePoster>.Instance,
             new Uri("http://127.0.0.1/"));
-        var credential = new CredentialReference(
+        var credential = CredentialReference.FromText(
             "id", "username-password",
             new Dictionary<string, string> { ["identifier"] = "u" });
 

@@ -88,6 +88,47 @@ feedback. Capture it."
   editor — when we exercise against real bsky.app we'll learn whether this
   path holds. Flagged here so the next session doesn't chase it as a new bug.
 
+### Credential abstraction — backend generality check
+
+Before finalizing step 4 we sanity-checked whether
+`ICredentialBroker.ResolveAsync(id) → CredentialReference(Id, Kind, Values)`
+is general enough to back alternative secret stores beyond in-memory and
+k8s. The shape bends:
+
+- **k8s Secrets** — Secret name → `Id`. `data` map (base64-decoded) → `Values`. Clean fit.
+- **Azure Key Vault** — One vault secret per credential holding a JSON blob, deserialized into `Values`. Or naming convention (`bluesky-rocky-identifier`, `bluesky-rocky-password`); broker collates. Both work.
+- **AWS Secrets Manager** — Native JSON `SecretString` maps directly to `Values`.
+- **HashiCorp Vault (KV v2)** — `secret/data/<id>` → string map → `Values`. Direct fit.
+- **File-based dev broker** — Gitignored JSON file, one-to-one with `Values`.
+
+`Values` was switched from `IReadOnlyDictionary<string, string>` to
+`IReadOnlyDictionary<string, ReadOnlyMemory<byte>>` pre-emptively. Most real
+backends (k8s Secrets, cert stores, storage-state blobs) are byte-native;
+text is the common case but not the *only* case. `CredentialReference.FromText`
++ `RequireText` cover the UTF-8 path at the edges without forcing every
+broker / consumer to care.
+
+### Known gaps in the credential interface (not yet fixed)
+
+These are not blocking step 4 but will force changes as the spec is filled
+in. Captured here so they aren't rediscovered:
+
+1. **No catalog / list.** Spec §6.4 calls for advertising which credential
+   ids exist (without values) so a caller can say "I'd need a Bluesky
+   credential, none is configured." Today's interface is `Resolve` only.
+   Every non-toy backend supports listing. Will need
+   `IAsyncEnumerable<string> ListAsync(CancellationToken)` or equivalent.
+2. **No write path for storage state (§6.5).** Storage-state-as-credential
+   requires the broker to *persist* post-login session bytes. Will need a
+   `Task WriteAsync(CredentialReference)` — and some backends are read-only
+   (Key Vault read role), so the interface should signal write capability
+   (either a feature flag or a separate `IWritableCredentialBroker`).
+3. **Tenancy isn't on the interface.** `ResolveAsync(string id)` has no
+   tenant parameter. Production backends need to scope lookups to the A2A
+   caller's tenant id. Either `ResolveAsync(TenantId, string id)` or
+   per-tenant broker scoping. Blocked on the spec-level tenant-identity
+   decision (spec §12 open question 5).
+
 ### Deferred (tracked so we don't lose them)
 
 All of these are on the step-4 line in spec §9.1 but intentionally punted to
