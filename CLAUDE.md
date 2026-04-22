@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Foragent is at **milestone 4** (spec §9.1): three capabilities now — `fetch-page-title` (step 2, Playwright), `extract-structured-data` (step 3, Playwright + LLM), and `post-to-site` (step 4, Playwright + credential broker). The credential broker + first `ISitePoster` (Bluesky) are in. Storage-state persistence, 2FA input-required flow, k8s-secrets broker, and per-tenant credential namespaces are all deferred — tracked in `docs/framework-feedback.md` step 4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
+Foragent is at **milestone 5** (spec §9.1): the A2A surface is wired end-to-end against RockBot as the first real user via the `docker-compose.yml` harness, pinned to `rockylhotka/rockbot-agent:0.8.5`. Three capabilities are exercised — `fetch-page-title` (step 2, Playwright), `extract-structured-data` (step 3, Playwright + LLM), and `post-to-site` (step 4, Playwright + credential broker). Validation was scoped to "poster dispatches" — real Bluesky posting requires populating `FORAGENT_BLUESKY_*` in `.env` and is not yet covered by the milestone. Storage-state persistence, 2FA input-required flow, k8s-secrets broker, and per-tenant credential namespaces are still deferred — tracked in `docs/framework-feedback.md` step 4. The authoritative design document is `docs/foragent-specification.md` — read it before making non-trivial changes. Framework-level observations from each milestone are captured in `docs/framework-feedback.md`.
 
 ## Build / test
 

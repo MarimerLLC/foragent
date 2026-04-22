@@ -17,6 +17,11 @@
         "id": "extract-structured-data",
         "name": "Extract Structured Data",
         "description": "Navigate to a URL and extract data matching a natural-language description, returning JSON. Input the target URL and a description of what to extract."
+      },
+      {
+        "id": "post-to-site",
+        "name": "Post to Site",
+        "description": "Authenticate against a configured site (by credential identifier) and publish a post. Input JSON {\"site\":\"bluesky\",\"credentialId\":\"...\",\"content\":\"...\"} or message metadata fields site / credentialId / content. Credential values never cross the A2A boundary."
       }
     ]
   }
