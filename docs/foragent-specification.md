@@ -1,30 +1,39 @@
 # Foragent — Project Specification
 
-> **Status:** Design specification, pre-implementation.
+> **Status:** Governing specification, v0.2.
 > **Date:** April 2026
 > **Author:** Rocky Lhotka, Marimer LLC
-> **Repository (planned):** https://github.com/MarimerLLC/Foragent
+> **Repository:** https://github.com/MarimerLLC/foragent
 
 ---
 
 ## 1. Summary
 
-**Foragent** is an A2A-native browser agent for .NET. It exposes browser
-automation capabilities — navigate, extract, fill forms, post to sites,
-monitor pages — over the Agent2Agent (A2A) protocol. Other agents delegate
-browser work to Foragent rather than reasoning about DOM selectors, session
-state, or 2FA flows themselves.
+**Foragent** is an A2A-native, self-hosted **agentic browser agent** for
+.NET. Callers delegate free-form browser intent to Foragent — "submit
+these rows to this form," "post this content on this site," "extract
+this data from these pages" — and Foragent plans and drives the browser
+to fulfill it, using internal LLM reasoning to resolve selectors,
+interpret dynamic form structure, and recover from failure. Callers
+do not reason about DOM, selectors, session state, or 2FA.
 
 Foragent is built on the **RockBot framework** (the NuGet packages
-maintained at https://github.com/MarimerLLC/rockbot) and uses the official
-**Microsoft.Playwright** NuGet package for browser automation. It is the
-second consumer of the RockBot framework, after the RockBot personal agent
-itself.
+maintained at https://github.com/MarimerLLC/rockbot) and uses the
+official **Microsoft.Playwright** NuGet package for browser automation,
+driven directly in-process (no MCP sidecar, no Stagehand port — see
+Appendix A decision #16). It is the second consumer of the RockBot
+framework, after the RockBot personal agent itself.
+
+Foragent's product is **one generalist capability** (`browser-task`)
+that handles the long tail of browser work, complemented by a small set
+of narrow fast-path specialists where a structured typed interface pays
+for itself. Site-specific code is the exception, not the scaling path
+(see §5).
 
 Foragent is a standalone open-source project under Marimer LLC. RockBot
-is its first user, but the project is designed to be generally useful to
-anyone building agentic systems on .NET that need a self-hosted browser
-worker.
+is its first user, but the project is designed to be generally useful
+to anyone building agentic systems on .NET that need a self-hosted
+browser worker.
 
 ---
 
@@ -168,6 +177,31 @@ as the base image. The agent process calls Microsoft.Playwright directly.
 - Concurrency-within-pod can be added later if profiling shows it's
   needed.
 
+### 3.7 LLM tier routing
+
+Foragent uses the RockBot framework's `TieredChatClientRegistry`
+(`RockBot.Llm`, exposed via `AddRockBotTieredChatClients`). The registry
+provides three `IChatClient` instances — `Low`, `Balanced`, `High` —
+and registers the `Balanced` client as the default `IChatClient`
+singleton for consumers that inject without a tier hint.
+
+- **Capabilities request a tier appropriate to the work.** The generalist
+  planner loop (§5.2) targets `Balanced` for planning steps and may
+  request `High` for recovery from ambiguous states or complex reasoning.
+  Cheap structural operations (aria-snapshot summarization, extraction
+  shaping) target `Low` when a Low model is meaningfully cheaper.
+- **For v0.2 Foragent ships with one configured model.** Operators wire
+  the same `IChatClient` into all three tiers; future cost-optimization
+  upgrades swap models per-tier without touching capability code.
+- **Consumers that inject `IChatClient` directly continue to work.** They
+  transparently receive the `Balanced` client — the framework guarantees
+  this. No capability is required to be tier-aware; it's an opt-in
+  optimization surface.
+
+Direct injection of a single `IChatClient` (as used by v0.1's
+`ExtractStructuredDataCapability`) remains supported and backwards-
+compatible with the tiered registration.
+
 ---
 
 ## 4. Project structure
@@ -250,40 +284,162 @@ MIT license. Matches CSLA and the broader .NET OSS ecosystem.
 The capability list is the product. Foragent's value is what verbs it
 exposes via A2A, not what's inside.
 
-### 5.1 Initial capability set (v0.x)
+### 5.1 Capability model
 
-Start narrow. Add only when usage demands it.
+Foragent exposes capabilities at two tiers:
 
-| Capability | Description |
-|------------|-------------|
-| `fetch-page-content` | Navigate to a URL, return rendered text and structured page metadata. |
-| `extract-structured-data` | Navigate to a URL, extract data matching a description (e.g. "the product price and availability"). |
-| `fill-form` | Navigate to a URL, fill out a form given a description of the values, submit. |
-| `post-to-site` | Authenticate against a configured site (using credential broker) and post content. First targets: Bluesky, Mastodon. |
-| `monitor-page` | Periodically check a page for changes matching a description; emit A2A progress updates when changes occur. |
+1. **Generalist.** One capability — `browser-task` — that accepts
+   free-form intent plus optional URL and credential hints. Runs an
+   LLM-in-the-loop planner over the browser primitives, using any
+   learned site knowledge from the skills and memory stores (§5.6) as
+   priming. This is the default surface — the thing most callers should
+   invoke.
+2. **Fast-path specialists.** A small set of narrow, structured
+   capabilities that do one well-defined thing cheaply and
+   deterministically. `fetch-page-title` and `extract-structured-data`
+   are specialists. New specialists are added only when usage shows a
+   consistent, high-volume pattern that benefits from a typed interface.
 
-### 5.2 Capabilities explicitly out of scope (v1)
+Most real callers are themselves LLM agents. They default to the
+generalist. Specialists exist to keep deterministic, programmatic
+callers cheap — not to proliferate.
 
-- Test automation (Playwright already does this)
-- Raw browser primitive exposure (Microsoft's playwright/mcp does this)
-- Visual regression testing
-- Form-filling for sensitive financial transactions or account creation
-  (see Section 7.3)
-- Multi-tab orchestration as a primary feature (may be supported
-  internally but not advertised as a capability)
+### 5.2 Initial capability set (v0.2)
 
-### 5.3 Capability design principles
+| Capability | Tier | Description |
+|------------|------|-------------|
+| `browser-task` | Generalist | Given intent + optional URL, credential id, and allowed-hosts list, plan and drive the browser to fulfill the intent. Uses RockBot skills + memory as priming. Returns a result or a structured intermediate artifact (e.g. a learned form schema). |
+| `learn-form-schema` | Specialist (phase-1) | Given a URL and optional credential, introspect a form and return its schema — fields, types, dropdown dependencies, validation rules. Persists the schema as a skill (§5.6). Returns the schema to the caller for review. |
+| `execute-form-batch` | Specialist (phase-2) | Given a learned schema (by id or inline) and a batch of row data, submit the form once per row. Streams A2A progress updates. Handles partial failure. |
+| `fetch-page-title` | Specialist | Return the `<title>` of a URL. Inherited from milestone 2. |
+| `extract-structured-data` | Specialist | Extract structured data from a page matching a natural-language description. Inherited from milestone 3. |
 
-- Each capability has a **clear, named contract** — inputs, outputs,
-  error modes documented.
-- Capabilities are **task-level, not action-level**. "Post to site" is
-  a capability; "click button" is not.
-- Capabilities **may delegate to internal LLM reasoning** for
-  selector resolution, intent translation, and retry logic. This is
-  what makes Foragent an *agent* rather than a wrapper.
-- Capabilities **respect the credential broker contract**. They
-  reference credentials by ID; they never receive raw values from
-  callers.
+The v0.1 `post-to-site` capability ships in the main codebase as a
+regression test for credential handling. After step 7 it is removed
+from the advertised skill list; `browser-task` subsumes its function.
+
+The v0.1 `monitor-page` and `fill-form` capabilities fold into
+`browser-task` and do not ship as separate advertised skills.
+
+### 5.3 Capabilities explicitly out of scope (v1)
+
+- Test automation (Playwright already does this).
+- Raw browser primitive exposure (Microsoft's `@playwright/mcp` does
+  this; Foragent operates one level up — task-shaped, not tool-shaped).
+- Visual regression testing.
+- Form-filling for sensitive financial transactions, account creation,
+  or modifying security permissions (see §7.3).
+- Multi-tab orchestration as a primary feature (may be used internally
+  but not advertised).
+- Code generation from browser traces (e.g. "generate a Playwright
+  script that reproduces this"). Traces stay inside the learning
+  substrate.
+
+### 5.4 Capability design principles
+
+- **Task-level, not action-level.** "Submit these rows to that form"
+  is a capability; "click button" is not.
+- **Clear contracts even for the generalist.** `browser-task`'s input
+  shape is typed (intent, url?, credentialId?, allowedHosts, maxSteps?);
+  only the *plan* inside is LLM-generated.
+- **Return structured state, not narrative, when the caller needs to
+  act on it.** A learned form schema is typed JSON, not prose. A
+  submit-batch progress report is a typed status update, not a sentence.
+- **Delegate to the learning substrate, don't reinvent it.** Site
+  knowledge lives in RockBot skills + memory; the capability reads and
+  writes, it does not own its own cache.
+- **Credentials by reference.** Capabilities receive a credential id;
+  the broker (§6) resolves inside the Foragent process.
+
+### 5.5 Multi-phase flows
+
+Many real browser tasks are multi-phase with human or caller-side
+review between phases. The motivating example:
+
+1. **Phase 1 — Learn.** Navigate to a form; introspect its fields and
+   dynamic dependencies; return a schema to the caller.
+2. **Review.** The caller (human via their own UI, or another agent)
+   inspects the schema, decides whether to proceed, assembles input
+   data, validates.
+3. **Phase 2 — Execute.** Submit the form N times against the learned
+   schema, streaming progress.
+
+Foragent's role is Phase 1 and Phase 3. Phase 2 (review) is the
+caller's responsibility — Foragent is not in the review loop.
+
+To make this work:
+
+- Phase-1 capabilities **return structured artifacts** (form schemas,
+  extracted data, observed flow traces), not just status text.
+- Phase-1 artifacts are **persisted in the learning substrate** (§5.6)
+  and get an id the caller can reference in Phase 3.
+- Phase-3 capabilities **accept a learned-artifact reference or inline
+  artifact** as input, alongside per-invocation data.
+- Phase-3 capabilities **stream progress and handle partial failure**
+  over A2A — not batch-atomic.
+
+This is not an A2A protocol change. A2A 1.0 already supports structured
+response parts, streaming status updates, and task-id references; v0.2
+makes explicit use of all three.
+
+### 5.6 Learning substrate
+
+Foragent uses the RockBot framework's existing persistence for learned
+site knowledge, rather than building a Foragent-local store.
+
+**What's used:**
+
+- **`ISkillStore`** (file-backed, BM25 + optional semantic retrieval —
+  `RockBot.Host.Abstractions` + `RockBot.Host.AgentMemoryExtensions.WithSkills()`).
+  Stores site knowledge as markdown skills. Two origin categories:
+  - **Human-authored skills** — operator-written primers for a site
+    (e.g. `sites/bsky.app/overview`). Treated as priming hints for the
+    generalist planner.
+  - **Agent-learned skills** — written by the generalist on successful
+    task completion (e.g. `sites/bsky.app/learned/login-flow`). Tagged
+    with `metadata.source = "agent-learned"` and an importance score.
+- **`ILongTermMemory`** (file-backed, BM25 + semantic —
+  `WithLongTermMemory()`). Declarative observations that don't fit the
+  procedural skill shape: failed attempts, site-version notes, ambient
+  facts.
+
+**Skill naming:** `sites/{host}/{phase-or-intent}` — e.g.
+`sites/bsky.app/login`, `sites/bsky.app/compose-post`. Hierarchical `/`
+nesting is supported by the store. `seeAlso` links cross-reference
+skills for the same site so retrieval surfaces a small knowledge
+cluster, not one skill at a time.
+
+**Retrieval at plan time:**
+
+1. Capability computes a search query from task intent + target URL host.
+2. Queries skill store and memory store in parallel, top-K by relevance.
+3. Retrieved content becomes priming context for the LLM planner.
+4. New observations surface as writes after the task completes.
+
+**Structured artifacts (the form-schema case):**
+
+Learned form schemas are typed JSON, not markdown. Skill store holds
+markdown content. Resolution deferred to step 8; current options are
+(A) embed JSON in a fenced code block inside a skill, re-parse on
+retrieval, or (B) add a parallel Foragent-local typed store keyed by
+skill id. Framework-feedback tracks this as a candidate
+`ISkillStore.AttachedArtifacts` extension if the shape recurs.
+
+### 5.7 Human-in-the-loop
+
+Review gates are the **caller's** responsibility, not Foragent's.
+
+- Foragent returns structured state at phase boundaries (§5.5).
+- The caller decides whether to proceed. Human callers use their own
+  UI; agent callers make the decision programmatically.
+- Foragent does **not** block waiting for review. Each phase is a
+  separate A2A task.
+
+A2A's `input-required` state is used only for mid-task credential
+flows (2FA, §6.6). It is not used as a general "stop and let the human
+review" mechanism — that coupling would force Foragent to hold browser
+state across potentially-long human delays, which conflicts with the
+one-context-per-task model (§3.5).
 
 ---
 
@@ -385,9 +541,24 @@ flow is the recommended pattern.
 
 ### 7.1 Domain allowlists
 
-Per-task allowlists for navigable domains. The calling agent can
-constrain a task to specific origins; Foragent refuses navigation
-outside the allowlist. Default is restrictive, not permissive.
+Every capability invocation — especially the generalist `browser-task`
+(§5.2) — **must** carry an explicit allowed-hosts list. Empty list
+**rejects** the task; there is no default-permissive mode.
+
+Wildcards are supported to keep callers from having to enumerate every
+subdomain:
+
+- Exact host: `bsky.app`
+- Subdomain wildcard: `*.example.com` (matches `foo.example.com`,
+  `foo.bar.example.com`; does not match `example.com` itself — list
+  both if both are desired).
+- Fully unrestricted: `*` (explicit only; still callable, still logged).
+
+Foragent refuses any navigation, fetch, or subframe load outside the
+list before Playwright sees the URL. Per-tenant defaults (future, §7.5)
+will let individual tasks inherit rather than list everything on every
+call. Ad-hoc "navigate to whatever looks relevant" is explicitly not
+supported — the generalist is powerful but bounded.
 
 ### 7.2 Network egress policies
 
@@ -505,42 +676,65 @@ hard design questions until usage forces them.
 
 ### 9.1 Milestones
 
-1. **Empty agent on RockBot framework.** Stand up Foragent.Agent that
-   registers itself as an A2A server with one trivial capability
-   (`fetch-page-title`). No Playwright yet. Goal: feel the bootstrap
-   cost of building a new agent on RockBot.
+**Steps 1–5 — shipped (v0.1):**
 
-2. **Real Playwright integration for that capability.** Add
-   Microsoft.Playwright NuGet, implement `fetch-page-title` for real
-   against actual web pages. Goal: feel the integration story between
-   RockBot's agent loop and the Playwright library.
+1. **Empty agent on RockBot framework.** `fetch-page-title` with no
+   Playwright.
+2. **Real Playwright integration for that capability.**
+3. **Second capability** — `extract-structured-data` (Playwright + LLM).
+4. **Credentials and `post-to-site` for Bluesky.** `ICredentialBroker`
+   + `InMemoryCredentialBroker` + `BlueskySitePoster`.
+5. **RockBot wired to Foragent via A2A.** Validation loop; RockBot
+   becomes Foragent's first real user.
 
-3. **Add a second capability** (`extract-structured-data`). Goal: feel
-   how the framework supports growing the capability surface.
+**Steps 6–9 — v0.2 sequence:**
 
-4. **Add credentials and a third capability that needs them**
-   (`post-to-site` for Bluesky). Goal: end-to-end credential broker
-   story including ICredentialBroker abstraction and at least one
-   real implementation.
+6. **Baseline `browser-task` generalist.** LLM-in-the-loop planner built
+   directly on `Microsoft.Playwright` NuGet (no MCP sidecar, no
+   Stagehand — see Appendix A #16). Exposes a small `[AIFunction]`
+   tool set — `snapshot`, `click`, `type`, `navigate`, `wait_for`,
+   `done`, `fail` — through `IChatClient`. Uses `Page.AriaSnapshotAsync()`
+   ref-annotated snapshots and `Page.Locator("aria-ref=eN")` for ref
+   resolution. No learning substrate yet. Measure unaided success rate
+   on a small curated benchmark. Goal: establish the floor before
+   investing in priming.
 
-5. **Wire RockBot the agent up to call Foragent via A2A.** Goal:
-   validate the full loop. RockBot becomes Foragent's first real user.
+7. **Wire RockBot skills + memory as priming.** Register `ISkillStore`
+   + `ILongTermMemory` in Foragent's host. Retrieve relevant skills
+   into planner context; write agent-learned skills on success. Seed
+   one human-authored skill for `bsky.app`. Wire `IEmbeddingGenerator`
+   for semantic retrieval. Remove `post-to-site` from the advertised
+   skill list once `browser-task` + the learned bsky skill cover it.
+   Goal: prove the framework's persistence is the right substrate;
+   file issues if it isn't.
 
-Each milestone produces framework feedback. Capture it. Some will be
-small ergonomic fixes; some may be "the framework should really have a
-concept of X."
+8. **`learn-form-schema` + `execute-form-batch`.** First explicit
+   multi-phase capability pair. Structured JSON schema returned from
+   phase 1, batch execution with streaming per-row progress in phase 2.
+   Resolve open question #6 (how to persist typed JSON alongside
+   markdown skills) in the deliverable.
+
+9. **Deprecate subsumed specialists.** Review whether `fetch-page-title`
+   / `extract-structured-data` still pay their way or fold into
+   `browser-task` with equivalent cost. Land on the minimum advertised
+   capability set v0.2 actually needs.
+
+Each milestone produces framework feedback. Capture it in
+`docs/framework-feedback.md` — some will be small ergonomic fixes; some
+may be "the framework should really have a concept of X."
 
 ### 9.2 What is explicitly out of scope for v1
 
-- Container packaging beyond a single working Dockerfile
-- Helm charts and production k8s manifests
-- KEDA autoscaling integration
-- Multi-tenant credential broker UIs
-- Agent self-improvement / learning
-- Browser pool management
-- Stagehand-style natural-language-to-action layers (may be revisited
-  later; the internal LLM-based selector resolution is sufficient for
-  v1)
+- Container packaging beyond a single working Dockerfile.
+- Helm charts and production k8s manifests.
+- KEDA autoscaling integration.
+- Multi-tenant credential broker UIs.
+- Browser pool management (single shared Chromium per pod — §3.5).
+- Non-browser automation (desktop, mobile, API-only flows).
+
+(The v0.1 "no Stagehand-style natural-language-to-action layers" item
+is deliberately removed. v0.2's `browser-task` *is* that layer, built
+natively on Playwright NuGet — see Appendix A #16.)
 
 ---
 
@@ -600,13 +794,12 @@ identifier for .NET.
 
 These are real design questions deferred until usage forces an answer.
 
-1. **Internal LLM selection and tier routing.** Foragent will use
-   Microsoft.Extensions.AI for internal reasoning. Which tier routing
-   patterns from RockBot apply directly, and which are RockBot-specific?
-2. **Stagehand-equivalent for .NET.** Stagehand is Node-only. Should
-   Foragent build an equivalent natural-language `page.act()` layer in
-   C# using its internal LLM? Defer to v2 unless v1 selector-resolution
-   proves insufficient.
+1. ~~Internal LLM selection and tier routing.~~ **Closed** in v0.2
+   §3.7 — Foragent uses RockBot's `TieredChatClientRegistry`; ships
+   with one model aliased across tiers; capabilities are tier-aware.
+2. ~~Stagehand-equivalent for .NET.~~ **Closed** in v0.2 — built
+   natively on `Microsoft.Playwright` NuGet; no Stagehand port, no
+   `@playwright/mcp` sidecar. See Appendix A #16.
 3. **Storage state encryption at rest.** Storage state is sensitive but
    not as sensitive as raw credentials. Does it need stronger protection
    than the credential broker provides, or is broker-level fine?
@@ -615,6 +808,17 @@ These are real design questions deferred until usage forces an answer.
    Defer until a capability actually needs to change shape.
 5. **Tenant identity model.** A2A 1.0-preview's identity model is still
    evolving. Lock in the tenant identity story once A2A 1.0 stabilizes.
+6. **Structured artifacts in `ISkillStore`.** Learned form schemas
+   (§5.6) are typed JSON; skills store markdown. Stretch the skill
+   shape (fenced JSON, re-parse on retrieval) or add a parallel
+   Foragent-local typed store keyed by skill id? Decide at step 8.
+7. **Per-task budget.** How do we cap an LLM-in-the-loop task — max
+   steps, max tokens, wall-clock, cost? Proposed defaults:
+   `maxSteps=30`, `maxSeconds=120`, caller can raise within bounds.
+   Needed by step 6.
+8. **Retry and failure semantics for batches.** In `execute-form-batch`,
+   is a row failure fatal or per-row? How are partial results streamed?
+   Needed by step 8.
 
 ---
 
@@ -640,3 +844,8 @@ need to be revisited.
 | 13 | MIT license | Matches CSLA and the broader .NET OSS ecosystem. |
 | 14 | .NET 10, C# latest | Current stable .NET as of project start. |
 | 15 | Name: Foragent | Distinctive, self-explaining, available domains, no dev-tools collision. |
+| 16 | Build generalist `browser-task` on Microsoft.Playwright NuGet directly — no Stagehand port, no `@playwright/mcp` sidecar | Ref-annotated aria snapshots and `aria-ref=eN` locator resolution are Playwright features, not MCP-exclusive. `[AIFunction]` tool wrapping over `IChatClient` gives MCP-equivalent function-calling in-process. Keeps credential boundary (§6.1) clean and preserves v0.1 decision #1. |
+| 17 | Use RockBot's `TieredChatClientRegistry` (Low/Balanced/High) with Balanced as the injected default | Future cost-optimization can route cheaper classes of work (extraction, snapshot summarization) to Low without capability rewrites. v0.2 ships with one model aliased across tiers. |
+| 18 | Allowlists are mandatory per-task with wildcard support (`*.example.com`, `*`) | Generalist LLM-in-the-loop planner has much wider blast radius than fixed-flow specialists; empty list must reject. Wildcards keep callers from enumerating subdomains. |
+| 19 | Learned site knowledge lives in RockBot's `ISkillStore` + `ILongTermMemory`, not a Foragent-local store | Framework-owned persistence is already packable, DI-registerable, and has BM25+semantic hybrid retrieval with importance weighting. Building parallel infrastructure would be duplicate work and would miss the framework-validation goal (§8). |
+| 20 | Multi-phase flows (learn → review → execute) are expressed as separate A2A tasks, not one long-running task with `input-required` | Review gates are the caller's concern; Foragent would otherwise have to hold browser state across arbitrary human delays, breaking the one-context-per-task isolation model (§3.5). |
