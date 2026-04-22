@@ -24,6 +24,54 @@ public interface IBrowserSession : IAsyncDisposable
     /// title at the top so the LLM has enough context to reason.
     /// </summary>
     Task<PageSnapshot> CapturePageSnapshotAsync(Uri url, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a page for a multi-step flow (login, fill form, navigate, read
+    /// back confirmation). The caller drives the page with the methods on
+    /// <see cref="IBrowserPage"/> and disposes it when done. The surrounding
+    /// session's context still owns cookies / storage — close the page when
+    /// finished, dispose the session when the task ends.
+    /// </summary>
+    Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A stateful page inside an <see cref="IBrowserSession"/>. The grain is low
+/// enough to drive arbitrary HTML forms but the methods stay Playwright-free
+/// so capabilities don't pick up a hard dependency on Microsoft.Playwright.
+/// Selectors follow Playwright's syntax — CSS, text=, role=, etc. Sensitive
+/// values passed to <see cref="FillAsync"/> must not be logged by the
+/// implementation.
+/// </summary>
+public interface IBrowserPage : IAsyncDisposable
+{
+    /// <summary>Navigates the page to a new URL.</summary>
+    Task NavigateAsync(Uri url, CancellationToken cancellationToken = default);
+
+    /// <summary>Fills a field matched by <paramref name="selector"/>.</summary>
+    Task FillAsync(string selector, string value, CancellationToken cancellationToken = default);
+
+    /// <summary>Clicks the element matched by <paramref name="selector"/>.</summary>
+    Task ClickAsync(string selector, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Waits until the element matched by <paramref name="selector"/> is attached
+    /// and visible. Throws <see cref="TimeoutException"/> on timeout.
+    /// </summary>
+    Task WaitForSelectorAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The current URL, after any redirects and client-side navigations.</summary>
+    Task<Uri> GetUrlAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the inner text of the element matched by <paramref name="selector"/>,
+    /// or <c>null</c> if no element matches. Useful for reading back error
+    /// messages or confirmation text.
+    /// </summary>
+    Task<string?> GetTextAsync(string selector, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

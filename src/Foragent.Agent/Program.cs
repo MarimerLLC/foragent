@@ -1,6 +1,7 @@
 using System.ClientModel;
 using Foragent.Browser;
 using Foragent.Capabilities;
+using Foragent.Credentials;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using RockBot.A2A;
@@ -66,6 +67,12 @@ builder.Services.AddRockBotHost(agent =>
 });
 
 builder.Services.AddForagentBrowser();
+
+// ── Credentials ─────────────────────────────────────────────────────────────
+// In-memory broker bound to the "Credentials" config section (populated via
+// user-secrets in dev). Production deployments should swap in a k8s-secrets /
+// vault broker; tracked in docs/framework-feedback.md step 4.
+builder.Services.AddForagentCredentials(builder.Configuration);
 
 // ── HTTP A2A gateway (in-process) ────────────────────────────────────────────
 

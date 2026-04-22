@@ -94,6 +94,9 @@ internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
     public Func<Uri, CancellationToken, Task<PageSnapshot>> SnapshotResponder { get; set; } =
         (url, _) => Task.FromResult(new PageSnapshot(url, "stub", "stub content", PageSnapshotSource.Accessibility));
 
+    public Func<Uri, CancellationToken, Task<IBrowserPage>> PageResponder { get; set; } =
+        (_, _) => Task.FromResult<IBrowserPage>(new StubBrowserPage());
+
     public int SessionsCreated { get; private set; }
     public int SessionsDisposed { get; private set; }
 
@@ -111,12 +114,55 @@ internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
         public Task<PageSnapshot> CapturePageSnapshotAsync(Uri url, CancellationToken ct = default) =>
             owner.SnapshotResponder(url, ct);
 
+        public Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken ct = default) =>
+            owner.PageResponder(url, ct);
+
         public ValueTask DisposeAsync()
         {
             owner.SessionsDisposed++;
             return ValueTask.CompletedTask;
         }
     }
+}
+
+internal sealed class StubBrowserPage : IBrowserPage
+{
+    public List<string> Actions { get; } = [];
+    public Uri CurrentUrl { get; set; } = new("https://stub.example/");
+
+    public Task NavigateAsync(Uri url, CancellationToken ct = default)
+    {
+        CurrentUrl = url;
+        Actions.Add($"navigate:{url}");
+        return Task.CompletedTask;
+    }
+
+    public Task FillAsync(string selector, string value, CancellationToken ct = default)
+    {
+        // Record the selector but not the value — tests for post-to-site must
+        // never accidentally assert on password text.
+        Actions.Add($"fill:{selector}");
+        return Task.CompletedTask;
+    }
+
+    public Task ClickAsync(string selector, CancellationToken ct = default)
+    {
+        Actions.Add($"click:{selector}");
+        return Task.CompletedTask;
+    }
+
+    public Task WaitForSelectorAsync(string selector, TimeSpan? timeout = null, CancellationToken ct = default)
+    {
+        Actions.Add($"wait:{selector}");
+        return Task.CompletedTask;
+    }
+
+    public Task<Uri> GetUrlAsync(CancellationToken ct = default) => Task.FromResult(CurrentUrl);
+
+    public Task<string?> GetTextAsync(string selector, CancellationToken ct = default) =>
+        Task.FromResult<string?>(null);
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
 internal sealed class StubChatClient(Func<IEnumerable<ChatMessage>, ChatOptions?, Task<ChatResponse>> responder)

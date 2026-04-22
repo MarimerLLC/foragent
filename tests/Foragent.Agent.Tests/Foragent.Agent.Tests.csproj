@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foragent.Agent\Foragent.Agent.csproj" />
     <ProjectReference Include="..\..\src\Foragent.Capabilities\Foragent.Capabilities.csproj" />
+    <ProjectReference Include="..\..\src\Foragent.Credentials\Foragent.Credentials.csproj" />
   </ItemGroup>
 </Project>
