@@ -164,6 +164,76 @@ design in a way that allows adding it without breaking changes:
   poster, promote the URL to config and add an allowlist check around
   `IBrowserSession.OpenPageAsync`.
 
+## Step 5 — RockBot as Foragent's first real user
+
+Validation loop per spec §9.1 step 5. The goal is not new capabilities — it's
+to watch the end-to-end A2A path (RockBot → Foragent → response) actually
+run, with RockBot the agent standing in for a real caller.
+
+### What was exercised
+
+Ran `docker compose up --build` against pinned `rockylhotka/rockbot-agent:0.8.5`
+(latest framework release shipping the metadata pass-through and gateway
+packaging fixes from steps 1/3). Directly curled Foragent through the HTTP
+A2A gateway for all three skills:
+
+- `fetch-page-title` against `https://example.com` → `"Example Domain"`.
+- `extract-structured-data` with JSON body → LLM returned `{"heading":"Example Domain"}`.
+- `post-to-site` with unknown site → safe dispatcher error listing known sites.
+- `post-to-site` with `bluesky-rocky` id not present in the broker → clean
+  `"Credential 'bluesky-rocky' is not configured."` No credential id in the
+  response (only the requested id, which the caller already knows), no
+  exception surface, no leaked site internals. Warning log in Foragent
+  carries the id for operator debugging.
+
+Bluesky posting against the real site is intentionally deferred — this
+milestone was scoped to "poster dispatches" (capability → broker lookup →
+ISitePoster dispatch). The real-post path will be exercised once the user
+populates `FORAGENT_BLUESKY_IDENTIFIER` / `FORAGENT_BLUESKY_APP_PASSWORD`
+in `.env`.
+
+### Framework observations
+
+- **RockBot's peer registry shadows the peer's agent-card instead of
+  discovering from it.** Filed as
+  [rockbot#287](https://github.com/MarimerLLC/rockbot/issues/287). The
+  A2A v1 spec defines `/.well-known/agent-card.json` as the authoritative
+  skill list, but RockBot's `well-known-agents.json` carries a *full*
+  duplicate copy of each peer's skills (id, name, description). This is
+  a framework-side flaw, not a Foragent one — Foragent already collapses
+  its own internal duplication to a single `ForagentCapabilities.Skills`
+  source. Consequence: adding a capability to Foragent requires editing
+  the peer's seed file, not just Foragent's code. The registry should
+  carry only the peer coordinates (`url`, auth config) and let the A2A
+  client fetch + cache the card at first contact.
+- **`agent-trust.json` reseed is an all-or-nothing hammer.** The init
+  script uses `[ ! -s /data/agent/agent-trust.json ]` to guard against
+  overwriting user-curated trust. Reasonable default, but it means
+  adding a new Foragent skill requires wiping the `rockbot-data` volume
+  — which also wipes memory, conversations, and feedback. Distinct from
+  #287: `approvedSkills` is legitimately RockBot-owned local policy and
+  shouldn't be auto-discovered, but the reconciliation flow (peer adds
+  a skill → operator decides whether to approve) should not require a
+  destructive volume wipe.
+- **Caller identity flows cleanly on the bus side.** The
+  `ApiKeys__rockbot-calls-foragent__AgentId: RockBot` env-var maps the
+  HTTP API key to a caller id, and `AgentTaskContext.MessageContext.Agent`
+  carries `"RockBot"` through to the capability. When per-tenant credential
+  scoping lands (spec §7.5), this is where tenant resolution belongs —
+  no changes needed to the A2A wire format.
+- **RockBot 0.8.5 started clean on first boot of the step-4 harness** —
+  previous milestones had a `mcp.json` deserialization warning on cold
+  start that self-resolves; still present but not blocking. Worth
+  mentioning so the next session doesn't chase it.
+
+### Not yet exercised in this step
+
+- **RockBot LLM-driven invocation of Foragent via the blazor UI.** The
+  direct-curl path validates the A2A server surface end-to-end, but the
+  "RockBot reasons its way to `invoke_agent` based on user chat" path was
+  not driven in this session. The harness is running (blazor on :8080)
+  for ad-hoc validation outside the milestone PR.
+
 ## Step 3 — Second capability (extract-structured-data)
 
 - **A2A metadata pass-through.** Filed as [rockbot#281](https://github.com/MarimerLLC/rockbot/issues/281),

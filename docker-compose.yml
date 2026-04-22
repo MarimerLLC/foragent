@@ -5,7 +5,7 @@
 #   - foragent        — this project; exposes HTTP A2A on port 5210
 #   - rockbot-init    — seeds /data/agent with RockBot profile + well-known-agents.json
 #                       pointing at foragent
-#   - rockbot         — rockylhotka/rockbot-agent:latest, configured to know Foragent
+#   - rockbot         — rockylhotka/rockbot-agent:0.8.5, configured to know Foragent
 #                       as an A2A peer it can delegate tasks to
 #   - blazor          — rockylhotka/rockbot-blazor:latest, web UI for chatting with
 #                       the rockbot agent. Open http://localhost:8080 to test.
@@ -61,7 +61,7 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — fetch-page-title in step 1"
+      Gateway__Description: "Browser agent — fetch-page-title, extract-structured-data, post-to-site"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
@@ -81,7 +81,7 @@ services:
       Credentials__bluesky-rocky__Values__password: ${FORAGENT_BLUESKY_APP_PASSWORD:-}
 
   rockbot-init:
-    image: rockylhotka/rockbot-agent:latest
+    image: rockylhotka/rockbot-agent:0.8.5
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -117,7 +117,7 @@ services:
       - ./deploy/rockbot-seed:/seed:ro
 
   rockbot:
-    image: rockylhotka/rockbot-agent:latest
+    image: rockylhotka/rockbot-agent:0.8.5
     depends_on:
       rockbot-init:
         condition: service_completed_successfully
