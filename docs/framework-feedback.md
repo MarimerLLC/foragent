@@ -194,23 +194,27 @@ in `.env`.
 
 ### Framework observations
 
-- **Agent-card lives in three places now, not two.** Steps 1/3 flagged the
-  duplication between bus-side `A2AOptions.Card.Skills` and HTTP-side
-  `GatewayOptions.Skills`. Step 5 surfaces a *third* copy: the calling
-  agent's `well-known-agents.json` seed, hand-maintained in
-  `deploy/rockbot-seed/`. Adding a skill to Foragent today requires edits
-  in four places: the `ICapability` implementation, `ForagentCapabilities.Skills`,
-  the well-known-agents seed, and `agent-trust.json`'s `approvedSkills`.
-  The framework could close this by having RockBot fetch the peer's
-  `/.well-known/agent-card.json` at first contact and cache skills from
-  there, rather than relying on a pre-seeded list.
-- **`agent-trust.json` is not refreshed on reseed.** The init script uses
-  `[ ! -s /data/agent/agent-trust.json ]` to guard against overwriting
-  user-curated trust. Reasonable default, but it means adding a new
-  Foragent skill requires wiping the `rockbot-data` volume — which also
-  wipes memory, conversations, and feedback. A framework-level
-  "reconcile approvedSkills against the peer's current agent-card" pass
-  would avoid the hammer.
+- **RockBot's peer registry shadows the peer's agent-card instead of
+  discovering from it.** Filed as
+  [rockbot#287](https://github.com/MarimerLLC/rockbot/issues/287). The
+  A2A v1 spec defines `/.well-known/agent-card.json` as the authoritative
+  skill list, but RockBot's `well-known-agents.json` carries a *full*
+  duplicate copy of each peer's skills (id, name, description). This is
+  a framework-side flaw, not a Foragent one — Foragent already collapses
+  its own internal duplication to a single `ForagentCapabilities.Skills`
+  source. Consequence: adding a capability to Foragent requires editing
+  the peer's seed file, not just Foragent's code. The registry should
+  carry only the peer coordinates (`url`, auth config) and let the A2A
+  client fetch + cache the card at first contact.
+- **`agent-trust.json` reseed is an all-or-nothing hammer.** The init
+  script uses `[ ! -s /data/agent/agent-trust.json ]` to guard against
+  overwriting user-curated trust. Reasonable default, but it means
+  adding a new Foragent skill requires wiping the `rockbot-data` volume
+  — which also wipes memory, conversations, and feedback. Distinct from
+  #287: `approvedSkills` is legitimately RockBot-owned local policy and
+  shouldn't be auto-discovered, but the reconciliation flow (peer adds
+  a skill → operator decides whether to approve) should not require a
+  destructive volume wipe.
 - **Caller identity flows cleanly on the bus side.** The
   `ApiKeys__rockbot-calls-foragent__AgentId: RockBot` env-var maps the
   HTTP API key to a caller id, and `AgentTaskContext.MessageContext.Agent`
