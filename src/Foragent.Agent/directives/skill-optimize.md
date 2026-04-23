@@ -34,7 +34,7 @@ Merge two skills when **all three** are true:
 - The combined skill would still fit comfortably inside ~400 words.
 
 Do not merge skills that happen to target the same site but different
-intents (e.g. `sites/bsky.app/login` vs `sites/bsky.app/compose-post`).
+intents (e.g. `sites/bsky-app/login` vs `sites/bsky-app/compose-post`).
 Those stay separate — different retrieval contexts.
 
 ## Output format
@@ -48,9 +48,9 @@ For each change you want to make, emit one of:
 Example:
 
 ```
-DELETE sites/bsky.app/learned/sign-in-with-app-password
-DELETE sites/bsky.app/learned/log-into-bluesky
-UPSERT sites/bsky.app/login | Log in to bsky.app with an app password; watch for 2FA challenges.
+DELETE sites/bsky-app/learned/sign-in-with-app-password
+DELETE sites/bsky-app/learned/log-into-bluesky
+UPSERT sites/bsky-app/login | Log in to bsky.app with an app password; watch for 2FA challenges.
 Bluesky's public web app is at https://bsky.app…
 (full markdown body)
 ---

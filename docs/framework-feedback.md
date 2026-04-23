@@ -573,3 +573,152 @@ the operator turns the harness on for a sustained session.
   `FORAGENT_LLM_*`.
 - Existing step-6 benchmark still 3/3 — framework bump didn't regress
   anything else.
+
+## Step 9 — Deprecate subsumed specialists
+
+Step 9 is a decision milestone, not a feature ship, so the framework
+observations are few. Advertised surface lands at three skills:
+`browser-task`, `learn-form-schema`, `execute-form-batch`.
+
+### What was deleted and why
+
+- **`fetch-page-title`** — milestone-1 smoke-test relic. Pure
+  specialist wrapping `<title>` reads. `browser-task` with intent
+  `"fetch the page title of <url>"` and `done.result` produces the
+  same value for ~2× the tokens, which is fine given no deterministic
+  high-volume caller actually exists.
+- **`extract-structured-data`** — single-turn typed extraction with
+  `ResponseFormat = Json`. Two deciding factors on top of the "no
+  caller" argument: (1) it was out of spec on §7.1 — it called the
+  no-argument `CreateSessionAsync` overload and accepted any host,
+  which the generalist refuses by design; (2) bringing it into spec
+  would have added mandatory `allowedHosts` to its input shape and
+  erased its simplicity advantage.
+- **`IBrowserSession.FetchPageTitleAsync` /
+  `CapturePageSnapshotAsync` / `PageSnapshot` / `PageSnapshotSource`**
+  — orphaned once the two capabilities went. Deleted from the
+  `Foragent.Browser` surface rather than left as dead code. The
+  `snapshot` tool inside `browser-task` uses `IBrowserAgentPage` and
+  never touched this API path.
+- **`CapabilityInput.Parse`** — the shared URL+description shim had
+  only the deleted specialists as consumers. `BrowserTaskInput`
+  handles its own shape; `Forms/*Input.cs` handles theirs. Deleted.
+- **Integration test `ExtractStructuredDataIntegrationTests`** — the
+  only `[SkippableFact]` in the browser-tests project that needed
+  `FORAGENT_LLM_*`. Removed; `BrowserTaskIntegrationTests` remains the
+  real-LLM benchmark.
+
+### Framework observations
+
+- **Capability-surface evolution is painless.** Removing
+  `ICapability` implementations is a three-line edit to
+  `ForagentCapabilitiesServiceCollectionExtensions` + a one-line edit
+  to the static `Skills` array. No framework API made the deletion
+  harder than it had to be — `IAgentTaskHandler.HandleTaskAsync` +
+  DI-resolved capabilities remain the right shape for a fast-moving
+  pre-1.0 product surface. Confirms that foragent#5 /
+  [rockbot#283](https://github.com/MarimerLLC/rockbot/issues/283) (per-skill
+  handler registration) is a quality-of-life improvement, not a
+  blocker.
+- **`AgentCard` and `Gateway:Skills` share one source of truth now.**
+  Post-step-1 refactor landed the `ForagentCapabilities.Skills` static
+  that both the A2A card and the HTTP gateway read from — step 9
+  touched exactly that one array and both sides updated. That worked
+  exactly as intended; the step-1 feedback entry about duplicate card
+  declarations is effectively closed on the Foragent side via the
+  local static. An upstream generalization — framework reads
+  `A2AOptions.Card.Skills` directly in the gateway — would remove the
+  small local static but isn't urgent.
+- **No spec open-questions closed or opened.** Open items #3, #4, #5,
+  #7 remain as written; #6 and #8 closed in step 8; #1 and #2 closed
+  in v0.2 spec adoption. v0.2 is the shipped minimum surface.
+
+### Follow-up fixes surfaced while validating step 9
+
+Running RockBot → Foragent end-to-end (MacBook-price search across
+apple.com + bestbuy.com) surfaced three pre-existing issues. All fixed
+on the step-9 branch since step 9's test plan claims end-to-end
+validation that didn't actually work without them.
+
+- **`BrowserTaskPriming` required `IEmbeddingGenerator`** — the
+  primary-constructor parameter was already annotated nullable
+  (`IEmbeddingGenerator<string, Embedding<float>>?`), but MSDI ignores
+  C# nullable annotations; it only honors default parameter values.
+  Reordered to put `embeddingGenerator` last with `= null` so MSDI
+  treats it as optional. Spec §5.6 says missing embeddings should
+  downgrade to BM25-only — this made that claim actually true.
+  Framework observation: MSDI's "nullable means optional" footgun is
+  well-documented but still catches people; worth a sentence in the
+  RockBot host-wiring docs if they exist.
+- **Skill names with dotted hosts fail silently** — RockBot 0.9's
+  `FileSkillStore.ValidateName` rejects `.` (only alphanumeric,
+  hyphens, underscores, `/`). `sites/bsky.app/login`,
+  `sites/apple.com/learned/…`, `sites/example.com/forms/…` — all
+  common real hosts — threw `ArgumentException` on save, which
+  `BskySeedSkillService` swallowed as a warning and
+  `TryWriteLearnedSkillAsync` swallowed on the error path. Added
+  `SkillNaming.SanitizeHost(host)` that replaces `.` → `-`
+  (`bsky.app` → `bsky-app`). Three call sites updated:
+  `BskySeedSkillService`, `BrowserTaskCapability.TryWriteLearnedSkillAsync`,
+  `LearnFormSchemaCapability.DeriveSkillName`. Framework observation:
+  the validator's error is informative but the fact that *every real
+  host fails validation* suggests either `.` should be allowed in
+  skill names (it's fine on filesystems) or the framework should
+  offer a canonical sanitizer so every consumer doesn't reinvent one.
+  Allowlist matching and memory-search categories keep the original
+  dotted host.
+- **Named-volume permissions on fresh compose boot** — the Foragent
+  Dockerfile chowns `/data` to the non-root `foragent` user (uid 1655)
+  at image-build time, but Docker mounts a fresh named volume
+  root-owned and masks the build-time chown. Added a `foragent-init`
+  busybox one-shot (mirroring the `rockbot-init` pattern) that
+  `chmod -R 777 /data/foragent` on volume creation. Harness issue,
+  not framework — noting here because it's the kind of thing that
+  could bite any RockBot consumer that mounts persistent state as a
+  named volume.
+- **Cancel handler override pattern** — RockBot ships a default
+  `AgentTaskCancelHandler` inside `AddA2A` that assumes stateless agents
+  and always replies `TaskNotCancelable`. Foragent is stateful (browser
+  task per request, potentially minutes long), and RockBot's
+  wisp/A2A coordination can send cancel messages when a local wisp
+  fails after already dispatching an A2A task. Replacing the default
+  is simple — call `agent.HandleMessage<AgentTaskCancelRequest,
+  ForagentCancelHandler>()` after `AddA2A` and the later `AddScoped`
+  wins — but worth calling out as the canonical pattern for any
+  long-running agent. Foragent's impl uses a singleton
+  `InFlightTaskRegistry` (concurrent dict of taskId → linked CTS);
+  the task handler registers on entry and removes in `finally`, the
+  cancel handler calls `TryCancel`. Publishing nothing on successful
+  cancel is deliberate — the task's own terminal reply is the
+  acknowledgment. Framework-level observation: a `WithTaskCancellation()`
+  opt-in on `AgentHostBuilder` (or a non-internal registry type the
+  framework ships so consumers don't roll their own concurrent dict)
+  would save every stateful-agent consumer ~50 lines. Filed as a
+  candidate enhancement; non-blocking.
+- **Structured A2A input requires a DataPart, not JSON-in-text** —
+  running RockBot → Foragent through the Blazor UI, the caller LLM
+  kept looping on `"Missing 'allowedHosts'"` rejections. Root cause:
+  Foragent's three input parsers (`BrowserTaskInput`,
+  `LearnFormSchemaInput`, `ExecuteFormBatchInput`) only consumed the
+  first `Kind = "text"` part, requiring JSON-as-a-string. RockBot
+  0.9.11's `invoke_agent` tool instead sends structured fields as a
+  separate `AgentMessagePart { Kind = "data", Data = <json>,
+  MimeType = "application/json" }` when its `data` parameter is
+  filled — the proper A2A DataPart shape. But Foragent never
+  advertised that it consumed data parts, and `invoke_agent`'s tool
+  description steered the LLM away from sending them unless the
+  target was "known to consume data." The LLM saw Foragent's skill
+  description say "Input: JSON {…}" and interpreted that as
+  "stringify the JSON into message," which strict parsers reject,
+  which looped. **Fix**: taught all three parsers to read a
+  `Kind = "data"` part first; taught the skill descriptions to
+  explicitly say "PASS INPUT AS AN A2A DATA PART — populate
+  invoke_agent's 'data' parameter with …"; updated the seed card
+  identically. Framework-level observation: the A2A protocol cleanly
+  supports typed payloads via DataPart, but the interoperability
+  chain (sender's tool description ↔ target's skill description ↔
+  target's parser) all need to agree that the data part is the
+  canonical shape. RockBot's `invoke_agent` tool description was
+  softened upstream in 0.9.14 (removing the "most agents only
+  understand text" steer) to help with this — consumers should
+  upgrade when available.

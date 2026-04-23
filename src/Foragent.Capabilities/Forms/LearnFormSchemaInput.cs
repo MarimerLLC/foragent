@@ -8,7 +8,13 @@ namespace Foragent.Capabilities.Forms;
 /// Parses input for the <c>learn-form-schema</c> capability (spec §5.2,
 /// phase-1 of the learn→review→execute pattern in §5.5).
 ///
-/// Shape (JSON in the first text part, field-by-field metadata overrides):
+/// Accepts the structured input in three forms: preferred is an A2A
+/// <c>DataPart</c> (<c>Kind = "data"</c>, <c>MimeType = "application/json"</c>)
+/// — the shape RockBot's <c>invoke_agent</c> produces when the caller fills
+/// its <c>data</c> parameter. Falls back to a JSON object in the first text
+/// part for curl callers. Field-by-field metadata overrides either source.
+///
+/// Shape:
 /// <list type="bullet">
 ///   <item><c>url</c> — required. Absolute http(s) URL of the page hosting the form.</item>
 ///   <item><c>allowedHosts</c> — required. Host allowlist (spec §7.1). Empty rejects.</item>
@@ -36,18 +42,27 @@ internal readonly record struct LearnFormSchemaInput(
         string? intent = null;
         List<string>? allowedHosts = null;
 
+        var dataJson = request.Message.Parts
+            .Where(p => p.Kind == "data" && !string.IsNullOrWhiteSpace(p.Data))
+            .Select(p => p.Data)
+            .FirstOrDefault();
+
         var text = request.Message.Parts
             .Where(p => p.Kind == "text")
             .Select(p => p.Text)
             .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))
             ?.Trim();
 
-        if (!string.IsNullOrEmpty(text) && text.StartsWith('{'))
+        string? jsonPayload = dataJson ?? (!string.IsNullOrEmpty(text) && text.StartsWith('{') ? text : null);
+
+        if (jsonPayload is not null)
         {
             try
             {
-                using var doc = JsonDocument.Parse(text);
+                using var doc = JsonDocument.Parse(jsonPayload);
                 var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return Fail("Structured input must be a JSON object.");
                 if (root.TryGetProperty("url", out var u)) url = u.GetString();
                 if (root.TryGetProperty("formSelector", out var fs)) formSelector = fs.GetString();
                 if (root.TryGetProperty("credentialId", out var c)) credentialId = c.GetString();
@@ -72,10 +87,10 @@ internal readonly record struct LearnFormSchemaInput(
             allowedHosts = [.. hostsCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
 
         if (string.IsNullOrWhiteSpace(url))
-            return Fail("Missing 'url' — the page hosting the form.");
+            return Fail(HintedError("Missing 'url' — the page hosting the form."));
 
         if (allowedHosts is null || allowedHosts.Count == 0)
-            return Fail("Missing 'allowedHosts' — learn-form-schema requires an explicit allowlist (spec §7.1).");
+            return Fail(HintedError("Missing 'allowedHosts' — learn-form-schema requires an explicit allowlist (spec §7.1)."));
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var parsedUrl) ||
             (parsedUrl.Scheme != Uri.UriSchemeHttp && parsedUrl.Scheme != Uri.UriSchemeHttps))
@@ -99,6 +114,10 @@ internal readonly record struct LearnFormSchemaInput(
 
     private static LearnFormSchemaInput Fail(string message) =>
         new(null, null, null, null, null, null, message);
+
+    private static string HintedError(string reason) => reason + " "
+        + "Pass inputs as a JSON object on the A2A DataPart — in RockBot's invoke_agent tool, that means filling the 'data' parameter, NOT adding fields to the 'message' text. "
+        + "Example data: {\"url\":\"https://...\",\"allowedHosts\":[\"host\"]}.";
 
     private static string? ReadMetadata(AgentTaskRequest request, string key)
     {

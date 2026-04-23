@@ -34,7 +34,11 @@ public sealed class BrowserTaskCapability(
         Id = "browser-task",
         Name = "Browser Task (generalist)",
         Description = "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. "
-            + "Input: JSON {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. "
+            + "PASS INPUT AS AN A2A DATA PART (a structured JSON object), not as prose inside the text message. "
+            + "When calling via RockBot's invoke_agent, populate the 'data' parameter with this object; "
+            + "the text 'message' should only be a human-readable summary. "
+            + "Fields: {\"intent\":\"what to accomplish\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. "
+            + "'intent' and 'allowedHosts' are REQUIRED — an empty allowlist rejects the task (spec §7.1). Use [\"*\"] explicitly when any host is acceptable. "
             + "Returns a short summary plus optional structured result string."
     };
 
@@ -185,8 +189,9 @@ public sealed class BrowserTaskCapability(
         if (string.IsNullOrEmpty(primaryHost))
             return;
 
+        var hostSegment = SkillNaming.SanitizeHost(primaryHost);
         var slug = Slugify(input.Intent!);
-        var name = $"sites/{primaryHost}/learned/{slug}";
+        var name = $"sites/{hostSegment}/learned/{slug}";
 
         try
         {
@@ -213,7 +218,7 @@ public sealed class BrowserTaskCapability(
                 CreatedAt: existing?.CreatedAt ?? DateTimeOffset.UtcNow,
                 UpdatedAt: existing is null ? null : DateTimeOffset.UtcNow,
                 LastUsedAt: DateTimeOffset.UtcNow,
-                SeeAlso: [$"sites/{primaryHost}/login"]);
+                SeeAlso: [$"sites/{hostSegment}/login"]);
             await skillStore.SaveAsync(skill);
             logger.LogInformation("Wrote learned skill '{Name}' ({Nav} navigations, {Steps} steps).",
                 name, state.Navigations.Count, state.Steps);

@@ -5,7 +5,7 @@ using RockBot.Host;
 namespace Foragent.Agent;
 
 /// <summary>
-/// Seeds the operator-authored <c>sites/bsky.app/login</c> skill into the
+/// Seeds the operator-authored <c>sites/bsky-app/login</c> skill into the
 /// configured <see cref="ISkillStore"/> on startup if it is not already
 /// present. Idempotent — subsequent starts are no-ops, so recreating the
 /// persistence volume does not wipe human-authored priming, but editing the
@@ -14,12 +14,17 @@ namespace Foragent.Agent;
 /// Human-authored skills seed the generalist planner with site-specific
 /// primers (spec §5.6). Agent-learned skills are written by the capability
 /// itself on successful task completion.
+///
+/// Note: the host segment is <c>bsky-app</c> (not <c>bsky.app</c>) because
+/// RockBot 0.9's <c>FileSkillStore.ValidateName</c> rejects dots — all
+/// skill names with hosts use the <see cref="SkillNaming.SanitizeHost"/>
+/// substitution.
 /// </summary>
 internal sealed class BskySeedSkillService(
     ISkillStore skillStore,
     ILogger<BskySeedSkillService> logger) : IHostedService
 {
-    private const string SkillName = "sites/bsky.app/login";
+    private const string SkillName = "sites/bsky-app/login";
 
     private const string SkillSummary =
         "Log in to bsky.app with an app password; look for 2FA challenges.";
@@ -80,7 +85,7 @@ internal sealed class BskySeedSkillService(
 
         ## See also
 
-        - `sites/bsky.app/compose-post` once that skill is learned.
+        - `sites/bsky-app/compose-post` once that skill is learned.
         """;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -101,7 +106,7 @@ internal sealed class BskySeedSkillService(
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: null,
                 LastUsedAt: null,
-                SeeAlso: ["sites/bsky.app/compose-post"]);
+                SeeAlso: ["sites/bsky-app/compose-post"]);
 
             await skillStore.SaveAsync(skill);
             logger.LogInformation("Seeded human-authored skill '{Name}'.", SkillName);

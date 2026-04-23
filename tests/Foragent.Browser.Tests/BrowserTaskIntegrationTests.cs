@@ -172,7 +172,6 @@ public class BrowserTaskIntegrationTests(TestPageServerFixture fixture)
         var priming = new BrowserTaskPriming(
             skillStore,
             memory,
-            embeddingGenerator: null,
             NullLogger<BrowserTaskPriming>.Instance);
 
         return new BrowserTaskCapability(

@@ -14,14 +14,16 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddForagentCapabilities(this IServiceCollection services)
     {
-        services.AddScoped<ICapability, FetchPageTitleCapability>();
-        services.AddScoped<ICapability, ExtractStructuredDataCapability>();
         services.AddScoped<ICapability, BrowserTaskCapability>();
         services.AddScoped<ICapability, LearnFormSchemaCapability>();
         services.AddScoped<ICapability, ExecuteFormBatchCapability>();
         services.AddScoped<BrowserTaskPriming>();
         services.AddScoped<FormSchemaEnricher>();
         services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
+        // Process-wide registry: the cancel message is dispatched in a
+        // different DI scope than the task request, so the registry must
+        // outlive scopes.
+        services.AddSingleton<InFlightTaskRegistry>();
         return services;
     }
 }
@@ -38,8 +40,6 @@ public static class ForagentCapabilities
     [
         BrowserTaskCapability.SkillDefinition,
         LearnFormSchemaCapability.SkillDefinition,
-        ExecuteFormBatchCapability.SkillDefinition,
-        FetchPageTitleCapability.SkillDefinition,
-        ExtractStructuredDataCapability.SkillDefinition
+        ExecuteFormBatchCapability.SkillDefinition
     ];
 }

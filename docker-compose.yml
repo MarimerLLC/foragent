@@ -5,7 +5,7 @@
 #   - foragent        — this project; exposes HTTP A2A on port 5210
 #   - rockbot-init    — seeds /data/agent with RockBot profile + well-known-agents.json
 #                       pointing at foragent
-#   - rockbot         — rockylhotka/rockbot-agent:0.9.11, configured to know Foragent
+#   - rockbot         — rockylhotka/rockbot-agent:0.9.15, configured to know Foragent
 #                       as an A2A peer it can delegate tasks to. 0.9.11 brings
 #                       the structured-data invoke_agent surface (PR #291) so
 #                       RockBot can consume Foragent's FormSchema JSON results
@@ -21,7 +21,7 @@
 #   curl -X POST http://localhost:5210/ \
 #     -H "X-Api-Key: rockbot-calls-foragent" \
 #     -H "Content-Type: application/json" \
-#     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"https://example.com"}]},"metadata":{"skill":"fetch-page-title"}}}'
+#     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"{\"intent\":\"fetch the page title\",\"url\":\"https://example.com\",\"allowedHosts\":[\"example.com\"]}"}]},"metadata":{"skill":"browser-task"}}}'
 # Note: the A2A v1-preview schema uses protobuf-style enum values (ROLE_USER, not "user")
 # and parts are bare {"text":"..."} objects — no "kind" field.
 #
@@ -47,12 +47,27 @@ services:
       timeout: 3s
       retries: 15
 
+  foragent-init:
+    # One-shot ownership fix for the foragent-data named volume. The Foragent
+    # Dockerfile chowns /data to the non-root `foragent` user at build time, but
+    # Docker mounts a fresh named volume root-owned and masks the chown —
+    # FileSkillStore then hits UnauthorizedAccessException on first boot. This
+    # init container runs as root once per volume creation and mirrors the
+    # rockbot-init pattern. Subsequent boots skip the mkdir+chown if already set.
+    image: busybox:latest
+    user: root
+    command: ["sh", "-c", "mkdir -p /data/foragent/skills /data/foragent/memory && chmod -R 777 /data/foragent"]
+    volumes:
+      - foragent-data:/data/foragent
+
   foragent:
     build:
       context: .
     depends_on:
       rabbitmq:
         condition: service_healthy
+      foragent-init:
+        condition: service_completed_successfully
     ports:
       - "5210:8080"
     environment:
@@ -64,12 +79,12 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — browser-task (generalist), learn-form-schema, execute-form-batch, fetch-page-title, extract-structured-data"
+      Gateway__Description: "Browser agent — browser-task (generalist), learn-form-schema, execute-form-batch"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
-      # LLM required for the extract-structured-data capability. Namespaced so
-      # Foragent can point at a different model than the RockBot side.
+      # LLM required for the browser-task planner and form-schema enrichment.
+      # Namespaced so Foragent can point at a different model than the RockBot side.
       ForagentLlm__Endpoint: ${FORAGENT_LLM_ENDPOINT:?FORAGENT_LLM_ENDPOINT is required}
       ForagentLlm__ModelId: ${FORAGENT_LLM_MODEL_ID:?FORAGENT_LLM_MODEL_ID is required}
       ForagentLlm__ApiKey: ${FORAGENT_LLM_API_KEY:?FORAGENT_LLM_API_KEY is required}
@@ -100,7 +115,7 @@ services:
       - foragent-data:/data/foragent
 
   rockbot-init:
-    image: rockylhotka/rockbot-agent:0.9.11
+    image: rockylhotka/rockbot-agent:0.9.15
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -136,7 +151,7 @@ services:
       - ./deploy/rockbot-seed:/seed:ro
 
   rockbot:
-    image: rockylhotka/rockbot-agent:0.9.11
+    image: rockylhotka/rockbot-agent:0.9.15
     depends_on:
       rockbot-init:
         condition: service_completed_successfully

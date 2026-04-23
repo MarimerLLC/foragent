@@ -16,9 +16,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
-// ── LLM (required — capabilities like extract-structured-data reason over
-//    page content via Microsoft.Extensions.AI). Config is namespaced under
-//    ForagentLlm so it can differ from the host's RockBot LLM config. ───────
+// ── LLM (required — browser-task's planner and form-schema enrichment reason
+//    over page content via Microsoft.Extensions.AI). Config is namespaced
+//    under ForagentLlm so it can differ from the host's RockBot LLM config. ─
 
 var llmSection = builder.Configuration.GetSection("ForagentLlm");
 var llmEndpoint = llmSection["Endpoint"]
@@ -155,6 +155,13 @@ builder.Services.AddRockBotHost(agent =>
 
     agent.Services.AddForagentCapabilities();
     agent.Services.AddHostedService<BskySeedSkillService>();
+
+    // Replace the framework's default stateless AgentTaskCancelHandler
+    // (which always returns TaskNotCancelable) with Foragent's stateful
+    // one that actually cancels the running browser task via
+    // InFlightTaskRegistry. Last AddScoped wins, so this call after
+    // AddA2A above shadows the framework default.
+    agent.HandleMessage<AgentTaskCancelRequest, ForagentCancelHandler>();
 });
 
 builder.Services.AddForagentBrowser();

@@ -7,8 +7,13 @@ namespace Foragent.Capabilities.Forms;
 /// <summary>
 /// Parses input for <c>execute-form-batch</c> (spec §5.2, phase-3 of §5.5).
 ///
-/// Shape (JSON in the first text part — metadata pass-through doesn't fit
-/// multi-row shapes):
+/// Accepts input on either an A2A <c>DataPart</c> (preferred — the shape
+/// RockBot's <c>invoke_agent</c> produces when its <c>data</c> parameter is
+/// filled) or a JSON object in the first text part (curl callers). Metadata
+/// pass-through is not supported — the multi-row shape doesn't fit in
+/// string-valued metadata.
+///
+/// Shape:
 /// <list type="bullet">
 ///   <item><c>schemaRef</c> — optional. Skill name produced by <c>learn-form-schema</c>.</item>
 ///   <item><c>schema</c> — optional. Inline <see cref="FormSchema"/> JSON.</item>
@@ -32,14 +37,21 @@ internal readonly record struct ExecuteFormBatchInput(
 {
     public static ExecuteFormBatchInput Parse(AgentTaskRequest request)
     {
+        var dataJson = request.Message.Parts
+            .Where(p => p.Kind == "data" && !string.IsNullOrWhiteSpace(p.Data))
+            .Select(p => p.Data)
+            .FirstOrDefault();
+
         var text = request.Message.Parts
             .Where(p => p.Kind == "text")
             .Select(p => p.Text)
             .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))
             ?.Trim();
 
-        if (string.IsNullOrEmpty(text) || !text.StartsWith('{'))
-            return Fail("Input must be a JSON object with rows, allowedHosts, and either schemaRef or schema.");
+        string? jsonPayload = dataJson ?? (!string.IsNullOrEmpty(text) && text.StartsWith('{') ? text : null);
+
+        if (jsonPayload is null)
+            return Fail(HintedError("No structured input found."));
 
         string? schemaRef;
         FormSchema? inlineSchema = null;
@@ -51,8 +63,10 @@ internal readonly record struct ExecuteFormBatchInput(
 
         try
         {
-            using var doc = JsonDocument.Parse(text);
+            using var doc = JsonDocument.Parse(jsonPayload);
             var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return Fail("Structured input must be a JSON object.");
             schemaRef = root.TryGetProperty("schemaRef", out var sr) ? sr.GetString() : null;
             if (root.TryGetProperty("schema", out var s) && s.ValueKind == JsonValueKind.Object)
             {
@@ -104,13 +118,13 @@ internal readonly record struct ExecuteFormBatchInput(
         }
 
         if (schemaRef is null && inlineSchema is null)
-            return Fail("Provide either 'schemaRef' (a skill name) or inline 'schema'.");
+            return Fail(HintedError("Provide either 'schemaRef' (a skill name) or inline 'schema'."));
         if (schemaRef is not null && inlineSchema is not null)
             return Fail("Provide only one of 'schemaRef' or 'schema', not both.");
         if (rows is null || rows.Count == 0)
-            return Fail("Missing 'rows' — must be a non-empty array of objects.");
+            return Fail(HintedError("Missing 'rows' — must be a non-empty array of objects."));
         if (allowedHosts is null || allowedHosts.Count == 0)
-            return Fail("Missing 'allowedHosts' — execute-form-batch requires an explicit allowlist (spec §7.1).");
+            return Fail(HintedError("Missing 'allowedHosts' — execute-form-batch requires an explicit allowlist (spec §7.1)."));
 
         HostAllowlist allowlist;
         try
@@ -143,6 +157,10 @@ internal readonly record struct ExecuteFormBatchInput(
 
     private static ExecuteFormBatchInput Fail(string message) =>
         new(null, null, null, null, null, ExecuteFormBatchMode.AbortOnFirst, null, message);
+
+    private static string HintedError(string reason) => reason + " "
+        + "Pass inputs as a JSON object on the A2A DataPart — in RockBot's invoke_agent tool, that means filling the 'data' parameter with the object, NOT adding fields to the 'message' text. "
+        + "Example data: {\"schemaRef\":\"sites/host/forms/name\",\"rows\":[{\"field\":\"value\"}],\"allowedHosts\":[\"host\"]}.";
 }
 
 internal enum ExecuteFormBatchMode
