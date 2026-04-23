@@ -106,6 +106,12 @@ internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
         return Task.FromResult<IBrowserSession>(new StubSession(this));
     }
 
+    public Task<IBrowserSession> CreateSessionAsync(Func<Uri, bool> allowedHost, CancellationToken ct = default)
+    {
+        SessionsCreated++;
+        return Task.FromResult<IBrowserSession>(new StubSession(this));
+    }
+
     private sealed class StubSession(StubBrowserSessionFactory owner) : IBrowserSession
     {
         public Task<string?> FetchPageTitleAsync(Uri url, CancellationToken ct = default) =>
@@ -116,6 +122,9 @@ internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
 
         public Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken ct = default) =>
             owner.PageResponder(url, ct);
+
+        public Task<IBrowserAgentPage> OpenAgentPageAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException("StubBrowserSessionFactory does not expose an agent page; test BrowserTaskCapability with a dedicated fake.");
 
         public ValueTask DisposeAsync()
         {

@@ -8,6 +8,7 @@ using RockBot.A2A;
 using RockBot.A2A.Gateway;
 using RockBot.A2A.Gateway.Auth;
 using RockBot.Host;
+using RockBot.Llm;
 using RockBot.Messaging.RabbitMQ;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,11 +37,17 @@ var foragentChatClient = openAiClient.GetChatClient(llmModelId).AsIChatClient();
 builder.Services.AddRockBotRabbitMq(opts =>
     builder.Configuration.GetSection("RabbitMq").Bind(opts));
 
-// ── Chat client — Foragent capabilities use this directly. Registered with
-//    RockBot too so the framework's startup requirement is satisfied. ───────
-
-builder.Services.AddSingleton(foragentChatClient);
-builder.Services.AddRockBotChatClient(foragentChatClient);
+// ── Tiered chat clients (spec §3.7, Appendix #17). One configured model is
+//    aliased across Low/Balanced/High; capabilities that inject IChatClient
+//    receive the Balanced tier. Tier-aware capabilities (browser-task) may
+//    resolve TieredChatClientRegistry to escalate/de-escalate. The factory
+//    inside AddRockBotTieredChatClients already wraps with
+//    RockBotFunctionInvokingChatClient — AddRockBotChatClient is redundant
+//    once this is called.
+builder.Services.AddRockBotTieredChatClients(
+    lowInnerClient: foragentChatClient,
+    balancedInnerClient: foragentChatClient,
+    highInnerClient: foragentChatClient);
 
 // ── Agent host + A2A bus subscription ───────────────────────────────────────
 

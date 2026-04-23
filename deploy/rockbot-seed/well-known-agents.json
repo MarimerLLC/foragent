@@ -9,6 +9,11 @@
     "authHeaderValueBase64": "cm9ja2JvdC1jYWxscy1mb3JhZ2VudA==",
     "skills": [
       {
+        "id": "browser-task",
+        "name": "Browser Task (generalist)",
+        "description": "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. Input JSON {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. allowedHosts is required and empty rejects. Returns a structured JSON result with status (done/failed/incomplete), summary, optional result, step count, and navigations."
+      },
+      {
         "id": "fetch-page-title",
         "name": "Fetch Page Title",
         "description": "Navigate to a URL with a real browser and return the contents of its <title> element."

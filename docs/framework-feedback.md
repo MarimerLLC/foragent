@@ -254,3 +254,88 @@ in `.env`.
   discovery) and `GatewayOptions.Skills` (HTTP agent-card endpoint) are independent. Our
   Program.cs populates both from a single `ForagentCapabilities.Skills` array — a workaround,
   not a fix. The framework should treat one as authoritative and derive the other.
+
+## Step 6 — baseline `browser-task` generalist
+
+### Framework observations
+
+- **`AddRockBotTieredChatClients` obviates `AddRockBotChatClient` but this
+  is undocumented.** Calling `AddRockBotTieredChatClients(low, balanced,
+  high)` registers an `IChatClient` singleton whose factory already wraps
+  the inner client with `RockBotFunctionInvokingChatClient`, plus a
+  `TieredChatClientRegistry` singleton. Callers who previously used
+  `AddRockBotChatClient(client)` don't need to call both — but that's
+  not spelled out anywhere. If both are called, the second registration
+  silently wins (standard MEDI behavior), which can swap the wrapped
+  client for an unwrapped one depending on order. Docs gap; candidate
+  framework fix is either a guard throw or collapsing both methods into
+  one overload shape.
+
+- **No per-request iteration cap surface on the function-invoking chat
+  client.** `FunctionInvokingChatClient.MaximumIterationsPerRequest` is
+  an *instance* property, and the wrapped client is built inside
+  `AddRockBotTieredChatClients` — the caller has no hook to set it per
+  `GetResponseAsync` invocation. `ChatOptions.AdditionalProperties`
+  lookup keys are not honored. `ModelBehavior.MaxToolIterationsOverride`
+  exists on the RockBot side but routes through YAML behavior config,
+  not per-call. Foragent enforces its step budget tool-side (each tool
+  checks `BrowserTaskState.BudgetExhausted`); wall-clock cancellation
+  is the real safety net. Framework candidate: either honor a standard
+  `ChatOptions.AdditionalProperties["MaximumIterationsPerRequest"]`
+  convention or expose the FICC instance via DI so consumers can
+  configure it.
+
+- **`Microsoft.Playwright` 1.50 (pinned since step 2) does not expose
+  the Ai aria-snapshot mode.** Step 6 requires ref-annotated snapshots
+  (`[ref=eN]` + `aria-ref=eN` locator resolution). That gating moved
+  from a boolean `Ref` option to `Mode = AriaSnapshotMode.Ai` sometime
+  between 1.52 and the current 1.59 C# bindings. Foragent bumped the
+  pin to 1.59.0; container base image
+  (`mcr.microsoft.com/playwright/dotnet:v1.50.0-noble`) will need the
+  matching bump in the first release that ships browser-task. Not a
+  framework-issue per se, but relevant to RockBot's "v1 Foragent" story
+  and to anyone using the framework + Playwright together.
+
+- **Aria-ref lifetime is a contract the planner must respect.** Refs are
+  valid only within the snapshot they came from. The tool surface
+  documents this in the `snapshot` description; if the framework ever
+  ships a "browser task runner" helper of its own (candidate
+  `RockBot.Browser.Planner`?), it should bake the "re-snapshot after
+  mutation" rule into a first-class contract rather than leaving it to
+  prompt text.
+
+- **`AIFunctionFactory.Create(Delegate, name:, description:, …)`
+  descriptions only surface the method-level `[Description]`.** Parameter
+  descriptions must be on parameters via `[Description]` — easy to miss
+  without the reminder. Worked as expected; noting for anyone building
+  similar tool surfaces.
+
+- **RockBot's `RockBotFunctionInvokingChatClient` auto-invokes tools end
+  to end in a single `GetResponseAsync` call.** This is exactly what the
+  planner wants; no custom loop needed. One quirk: the FICC keeps
+  iterating as long as the model emits tool calls, with no public
+  step cap (see above). Combined with aria-ref lifetimes, a model that
+  thrashes on stale refs can burn budget fast. Step 7's learning
+  substrate is the intended mitigation.
+
+### Unaided floor measurement (2026-04-22)
+
+First end-to-end benchmark against the operator's Azure AI Foundry
+Balanced model (no learned skills, no priming — the "unaided" floor the
+spec §9.1 step 6 calls for):
+
+| Scenario | Result | Wall-clock |
+|---|---|---|
+| Click-through (home → link → read destination value) | ✅ done | 5 s |
+| Form submit (fill name + textarea → submit → read confirmation) | ✅ done | 8 s |
+| Multi-page nav (index → intro → chapter-2 → read bolded answer) | ✅ done | 7 s |
+
+3 / 3 passed on first attempt. Establishes the baseline Foragent must
+not regress against once step 7 adds priming. Re-run this set whenever
+the planner prompt, tool surface, or model pin changes.
+
+### Not yet exercised
+
+- **`TieredChatClientRegistry.GetClient(ModelTier.Low/High)` is wired
+  but no capability resolves it yet.** All three tiers currently alias
+  to the same model. Tier-aware capability code lands as models diverge.
