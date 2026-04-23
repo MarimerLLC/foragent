@@ -197,7 +197,7 @@ public sealed class LearnFormSchemaCapability(
 
     private static string DeriveSkillName(Uri url, string? intent)
     {
-        var host = url.Host.ToLowerInvariant();
+        var host = SkillNaming.SanitizeHost(url.Host.ToLowerInvariant());
         var slug = string.IsNullOrWhiteSpace(intent)
             ? SlugFromPath(url.AbsolutePath)
             : Slugify(intent!);

@@ -70,7 +70,7 @@ public class LearnFormSchemaCapabilityTests
         using var doc = JsonDocument.Parse(TestContext.TextOf(result));
         Assert.Equal("done", doc.RootElement.GetProperty("status").GetString());
         var skillName = doc.RootElement.GetProperty("skillName").GetString()!;
-        Assert.StartsWith("sites/example.com/forms/", skillName);
+        Assert.StartsWith("sites/example-com/forms/", skillName);
 
         var saved = skills.Saved[skillName];
         Assert.NotNull(saved.Manifest);

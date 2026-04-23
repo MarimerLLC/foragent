@@ -632,3 +632,47 @@ observations are few. Advertised surface lands at three skills:
 - **No spec open-questions closed or opened.** Open items #3, #4, #5,
   #7 remain as written; #6 and #8 closed in step 8; #1 and #2 closed
   in v0.2 spec adoption. v0.2 is the shipped minimum surface.
+
+### Follow-up fixes surfaced while validating step 9
+
+Running RockBot → Foragent end-to-end (MacBook-price search across
+apple.com + bestbuy.com) surfaced three pre-existing issues. All fixed
+on the step-9 branch since step 9's test plan claims end-to-end
+validation that didn't actually work without them.
+
+- **`BrowserTaskPriming` required `IEmbeddingGenerator`** — the
+  primary-constructor parameter was already annotated nullable
+  (`IEmbeddingGenerator<string, Embedding<float>>?`), but MSDI ignores
+  C# nullable annotations; it only honors default parameter values.
+  Reordered to put `embeddingGenerator` last with `= null` so MSDI
+  treats it as optional. Spec §5.6 says missing embeddings should
+  downgrade to BM25-only — this made that claim actually true.
+  Framework observation: MSDI's "nullable means optional" footgun is
+  well-documented but still catches people; worth a sentence in the
+  RockBot host-wiring docs if they exist.
+- **Skill names with dotted hosts fail silently** — RockBot 0.9's
+  `FileSkillStore.ValidateName` rejects `.` (only alphanumeric,
+  hyphens, underscores, `/`). `sites/bsky.app/login`,
+  `sites/apple.com/learned/…`, `sites/example.com/forms/…` — all
+  common real hosts — threw `ArgumentException` on save, which
+  `BskySeedSkillService` swallowed as a warning and
+  `TryWriteLearnedSkillAsync` swallowed on the error path. Added
+  `SkillNaming.SanitizeHost(host)` that replaces `.` → `-`
+  (`bsky.app` → `bsky-app`). Three call sites updated:
+  `BskySeedSkillService`, `BrowserTaskCapability.TryWriteLearnedSkillAsync`,
+  `LearnFormSchemaCapability.DeriveSkillName`. Framework observation:
+  the validator's error is informative but the fact that *every real
+  host fails validation* suggests either `.` should be allowed in
+  skill names (it's fine on filesystems) or the framework should
+  offer a canonical sanitizer so every consumer doesn't reinvent one.
+  Allowlist matching and memory-search categories keep the original
+  dotted host.
+- **Named-volume permissions on fresh compose boot** — the Foragent
+  Dockerfile chowns `/data` to the non-root `foragent` user (uid 1655)
+  at image-build time, but Docker mounts a fresh named volume
+  root-owned and masks the build-time chown. Added a `foragent-init`
+  busybox one-shot (mirroring the `rockbot-init` pattern) that
+  `chmod -R 777 /data/foragent` on volume creation. Harness issue,
+  not framework — noting here because it's the kind of thing that
+  could bite any RockBot consumer that mounts persistent state as a
+  named volume.

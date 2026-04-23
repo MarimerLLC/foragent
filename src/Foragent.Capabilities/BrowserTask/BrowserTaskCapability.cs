@@ -185,8 +185,9 @@ public sealed class BrowserTaskCapability(
         if (string.IsNullOrEmpty(primaryHost))
             return;
 
+        var hostSegment = SkillNaming.SanitizeHost(primaryHost);
         var slug = Slugify(input.Intent!);
-        var name = $"sites/{primaryHost}/learned/{slug}";
+        var name = $"sites/{hostSegment}/learned/{slug}";
 
         try
         {
@@ -213,7 +214,7 @@ public sealed class BrowserTaskCapability(
                 CreatedAt: existing?.CreatedAt ?? DateTimeOffset.UtcNow,
                 UpdatedAt: existing is null ? null : DateTimeOffset.UtcNow,
                 LastUsedAt: DateTimeOffset.UtcNow,
-                SeeAlso: [$"sites/{primaryHost}/login"]);
+                SeeAlso: [$"sites/{hostSegment}/login"]);
             await skillStore.SaveAsync(skill);
             logger.LogInformation("Wrote learned skill '{Name}' ({Nav} navigations, {Steps} steps).",
                 name, state.Navigations.Count, state.Steps);

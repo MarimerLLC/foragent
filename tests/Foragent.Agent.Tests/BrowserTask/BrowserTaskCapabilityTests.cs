@@ -171,7 +171,6 @@ public class BrowserTaskCapabilityTests
         var priming = new BrowserTaskPriming(
             skillStore,
             memory,
-            embeddingGenerator: null,
             NullLogger<BrowserTaskPriming>.Instance);
 
         var capability = new BrowserTaskCapability(
@@ -192,7 +191,7 @@ public class BrowserTaskCapabilityTests
     {
         var skills = new FakeSkillStore();
         await skills.SaveAsync(new Skill(
-            Name: "sites/example.com/login",
+            Name: "sites/example-com/login",
             Summary: "Use the app password, not the account password.",
             Content: "Click 'Sign in', enter handle, then password.",
             CreatedAt: DateTimeOffset.UtcNow,
@@ -214,7 +213,7 @@ public class BrowserTaskCapabilityTests
 
         var userMessage = scripted.FirstMessages.Single(m => m.Role == ChatRole.User).Text ?? string.Empty;
         Assert.Contains("Known site knowledge", userMessage);
-        Assert.Contains("sites/example.com/login", userMessage);
+        Assert.Contains("sites/example-com/login", userMessage);
         Assert.Contains("app password", userMessage);
     }
 
@@ -243,7 +242,7 @@ public class BrowserTaskCapabilityTests
             ctx);
 
         Assert.Equal(AgentTaskState.Completed, result.State);
-        var learned = skills.Saved.Keys.SingleOrDefault(k => k.StartsWith("sites/example.com/learned/"));
+        var learned = skills.Saved.Keys.SingleOrDefault(k => k.StartsWith("sites/example-com/learned/"));
         Assert.NotNull(learned);
         var skill = skills.Saved[learned!];
         Assert.Equal("Navigate home then click the details link.", skill.Summary);
@@ -268,7 +267,7 @@ public class BrowserTaskCapabilityTests
                 """{"intent":"read one page","url":"https://example.com/","allowedHosts":["example.com"]}"""),
             ctx);
 
-        Assert.DoesNotContain(skills.Saved.Keys, k => k.StartsWith("sites/example.com/learned/"));
+        Assert.DoesNotContain(skills.Saved.Keys, k => k.StartsWith("sites/example-com/learned/"));
     }
 
     private sealed class StubCredentialBroker : ICredentialBroker

@@ -18,10 +18,10 @@ public class BskySeedSkillServiceTests
 
         await service.StartAsync(CancellationToken.None);
 
-        Assert.True(store.Saved.ContainsKey("sites/bsky.app/login"));
-        var skill = store.Saved["sites/bsky.app/login"];
+        Assert.True(store.Saved.ContainsKey("sites/bsky-app/login"));
+        var skill = store.Saved["sites/bsky-app/login"];
         Assert.Contains("app password", skill.Summary, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("sites/bsky.app/compose-post", skill.SeeAlso!);
+        Assert.Contains("sites/bsky-app/compose-post", skill.SeeAlso!);
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class BskySeedSkillServiceTests
     {
         var store = new FakeSkillStore();
         var existing = new Skill(
-            Name: "sites/bsky.app/login",
+            Name: "sites/bsky-app/login",
             Summary: "operator-edited summary",
             Content: "operator-edited content",
             CreatedAt: DateTimeOffset.UtcNow.AddDays(-7),
@@ -41,7 +41,7 @@ public class BskySeedSkillServiceTests
         var service = new BskySeedSkillService(store, NullLogger<BskySeedSkillService>.Instance);
         await service.StartAsync(CancellationToken.None);
 
-        var after = store.Saved["sites/bsky.app/login"];
+        var after = store.Saved["sites/bsky-app/login"];
         Assert.Equal("operator-edited summary", after.Summary);
         Assert.Equal("operator-edited content", after.Content);
     }
@@ -53,9 +53,9 @@ public class BskySeedSkillServiceTests
         var service = new BskySeedSkillService(store, NullLogger<BskySeedSkillService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
-        var firstContent = store.Saved["sites/bsky.app/login"].Content;
+        var firstContent = store.Saved["sites/bsky-app/login"].Content;
         await service.StartAsync(CancellationToken.None);
-        var secondContent = store.Saved["sites/bsky.app/login"].Content;
+        var secondContent = store.Saved["sites/bsky-app/login"].Content;
 
         Assert.Same(firstContent, secondContent);
     }

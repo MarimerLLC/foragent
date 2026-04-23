@@ -47,12 +47,27 @@ services:
       timeout: 3s
       retries: 15
 
+  foragent-init:
+    # One-shot ownership fix for the foragent-data named volume. The Foragent
+    # Dockerfile chowns /data to the non-root `foragent` user at build time, but
+    # Docker mounts a fresh named volume root-owned and masks the chown —
+    # FileSkillStore then hits UnauthorizedAccessException on first boot. This
+    # init container runs as root once per volume creation and mirrors the
+    # rockbot-init pattern. Subsequent boots skip the mkdir+chown if already set.
+    image: busybox:latest
+    user: root
+    command: ["sh", "-c", "mkdir -p /data/foragent/skills /data/foragent/memory && chmod -R 777 /data/foragent"]
+    volumes:
+      - foragent-data:/data/foragent
+
   foragent:
     build:
       context: .
     depends_on:
       rabbitmq:
         condition: service_healthy
+      foragent-init:
+        condition: service_completed_successfully
     ports:
       - "5210:8080"
     environment:

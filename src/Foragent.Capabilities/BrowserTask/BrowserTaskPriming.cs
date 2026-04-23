@@ -14,11 +14,18 @@ namespace Foragent.Capabilities.BrowserTask;
 /// Isolated from <see cref="BrowserTaskCapability"/> so tests can inject
 /// fake stores without going through the capability's full execute path.
 /// </summary>
+/// <remarks>
+/// <paramref name="embeddingGenerator"/> is placed last with a default of
+/// <c>null</c> so MSDI resolves the type even when no embedding generator is
+/// registered — the C# nullable annotation alone is not enough; MSDI only
+/// honors optional parameters via default values (spec §5.6 — "missing
+/// embeddings downgrade retrieval to BM25-only").
+/// </remarks>
 public sealed class BrowserTaskPriming(
     ISkillStore skillStore,
     ILongTermMemory longTermMemory,
-    IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator,
-    ILogger<BrowserTaskPriming> logger)
+    ILogger<BrowserTaskPriming> logger,
+    IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
 {
     public const int MaxSkills = 5;
     public const int MaxMemories = 5;

@@ -17,7 +17,7 @@ Three v0.1/v0.2 specialists have been removed as `browser-task` subsumes
 them. The project is pre-public so no deprecation path was required:
 
 - `post-to-site` — removed in step 7. `browser-task` + the seeded
-  `sites/bsky.app/login` skill cover the use case.
+  `sites/bsky-app/login` skill cover the use case.
 - `fetch-page-title` — removed in step 9. Was a milestone-1 smoke
   target; `browser-task` with a simple intent produces the same result.
 - `extract-structured-data` — removed in step 9. `browser-task` with a

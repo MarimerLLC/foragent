@@ -393,10 +393,10 @@ site knowledge, rather than building a Foragent-local store.
   `RockBot.Host.Abstractions` + `RockBot.Host.AgentMemoryExtensions.WithSkills()`).
   Stores site knowledge as markdown skills. Two origin categories:
   - **Human-authored skills** — operator-written primers for a site
-    (e.g. `sites/bsky.app/overview`). Treated as priming hints for the
+    (e.g. `sites/bsky-app/overview`). Treated as priming hints for the
     generalist planner.
   - **Agent-learned skills** — written by the generalist on successful
-    task completion (e.g. `sites/bsky.app/learned/login-flow`). Tagged
+    task completion (e.g. `sites/bsky-app/learned/login-flow`). Tagged
     with `metadata.source = "agent-learned"` and an importance score.
 - **`ILongTermMemory`** (file-backed, BM25 + semantic —
   `WithLongTermMemory()`). Declarative observations that don't fit the
@@ -404,7 +404,10 @@ site knowledge, rather than building a Foragent-local store.
   facts.
 
 **Skill naming:** `sites/{host}/{phase-or-intent}` — e.g.
-`sites/bsky.app/login`, `sites/bsky.app/compose-post`. Hierarchical `/`
+`sites/bsky-app/login`, `sites/bsky-app/compose-post`. Host segments are
+sanitized (`.` → `-`) because RockBot 0.9's `FileSkillStore.ValidateName`
+rejects dots; `bsky.app` becomes `bsky-app`. Allowlists and memory
+categories keep the original dotted host. Hierarchical `/`
 nesting is supported by the store. `seeAlso` links cross-reference
 skills for the same site so retrieval surfaces a small knowledge
 cluster, not one skill at a time.
