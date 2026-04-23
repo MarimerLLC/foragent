@@ -5,6 +5,7 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Playwright" />
     <PackageReference Include="OpenAI" />
+    <PackageReference Include="RockBot.Host.Abstractions" />
     <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

@@ -5,6 +5,7 @@ using Foragent.Credentials;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using RockBot.A2A;
+using RockBot.Host;
 
 namespace Foragent.Capabilities.BrowserTask;
 
@@ -15,15 +16,17 @@ namespace Foragent.Capabilities.BrowserTask;
 /// capability — specialists exist only where deterministic, programmatic
 /// callers benefit from a typed shape.
 ///
-/// v0.2 step 6 scope: no learning substrate, no credentials injection into
-/// tools (credential id is acknowledged but unused beyond audit logging —
-/// step 7 wires <c>ISkillStore</c> + <c>ILongTermMemory</c> priming, later
-/// steps expose credentials to the planner through a typed tool).
+/// Step 7 wires the learning substrate: <see cref="ISkillStore"/> +
+/// <see cref="ILongTermMemory"/> provide priming on plan, and successful
+/// tasks write a learned skill back so subsequent runs against the same
+/// site benefit from accumulated knowledge (spec §5.6).
 /// </summary>
 public sealed class BrowserTaskCapability(
     IBrowserSessionFactory browserFactory,
     IChatClient chatClient,
     ICredentialBroker credentialBroker,
+    BrowserTaskPriming priming,
+    ISkillStore skillStore,
     ILogger<BrowserTaskCapability> logger) : ICapability
 {
     public static AgentSkill SkillDefinition { get; } = new()
@@ -98,10 +101,11 @@ public sealed class BrowserTaskCapability(
             state.MaxSteps = input.MaxSteps;
             var tools = new BrowserTaskTools(page, state, input.Allowlist!, logger).BuildFunctions();
 
+            var primingText = await priming.BuildAsync(input.Intent!, input.Allowlist!, linkedCts.Token);
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, SystemPrompt),
-                new(ChatRole.User, BuildUserPrompt(input))
+                new(ChatRole.User, BuildUserPrompt(input, primingText))
             };
 
             var options = new ChatOptions
@@ -130,6 +134,9 @@ public sealed class BrowserTaskCapability(
                     input.MaxSeconds, state.Steps);
             }
 
+            if (state.IsDone)
+                await TryWriteLearnedSkillAsync(input, state, linkedCts.Token);
+
             return BuildResult(request, input, state);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -143,7 +150,7 @@ public sealed class BrowserTaskCapability(
         }
     }
 
-    private static string BuildUserPrompt(BrowserTaskInput input)
+    private static string BuildUserPrompt(BrowserTaskInput input, string? primingText)
     {
         var sb = new StringBuilder();
         sb.Append("Intent: ").AppendLine(input.Intent);
@@ -153,7 +160,142 @@ public sealed class BrowserTaskCapability(
         sb.Append("Step budget: ").Append(input.MaxSteps).Append(" steps / ").Append(input.MaxSeconds).AppendLine("s wall-clock.");
         if (!string.IsNullOrWhiteSpace(input.CredentialId))
             sb.AppendLine("A credential id was provided but is not yet exposed as a tool. If authentication is required, call fail().");
+        if (!string.IsNullOrWhiteSpace(primingText))
+        {
+            sb.AppendLine();
+            sb.Append(primingText);
+        }
         return sb.ToString();
+    }
+
+    private async Task TryWriteLearnedSkillAsync(
+        BrowserTaskInput input,
+        BrowserTaskState state,
+        CancellationToken ct)
+    {
+        // Only write when we have something substantive to remember. A task
+        // that completed in one navigation carries no multi-step knowledge
+        // worth priming future runs with.
+        if (state.Navigations.Count < 2)
+            return;
+
+        var primaryHost = input.Allowlist!.Patterns
+            .Select(p => p.TrimStart('*', '.'))
+            .FirstOrDefault(p => !string.IsNullOrEmpty(p) && p != "*");
+        if (string.IsNullOrEmpty(primaryHost))
+            return;
+
+        var slug = Slugify(input.Intent!);
+        var name = $"sites/{primaryHost}/learned/{slug}";
+
+        try
+        {
+            var existing = await skillStore.GetAsync(name);
+            var synthesizerMessages = new List<ChatMessage>
+            {
+                new(ChatRole.System, LearnedSkillSystemPrompt),
+                new(ChatRole.User, BuildLearnedSkillPrompt(input, state, existing))
+            };
+            // No tools on this turn — the model is just summarising.
+            var response = await chatClient.GetResponseAsync(
+                synthesizerMessages,
+                new ChatOptions { Tools = [] },
+                ct);
+            var text = response.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+
+            var (summary, content) = SplitSummaryAndContent(text);
+            var skill = new Skill(
+                Name: name,
+                Summary: summary,
+                Content: content,
+                CreatedAt: existing?.CreatedAt ?? DateTimeOffset.UtcNow,
+                UpdatedAt: existing is null ? null : DateTimeOffset.UtcNow,
+                LastUsedAt: DateTimeOffset.UtcNow,
+                SeeAlso: [$"sites/{primaryHost}/login"]);
+            await skillStore.SaveAsync(skill);
+            logger.LogInformation("Wrote learned skill '{Name}' ({Nav} navigations, {Steps} steps).",
+                name, state.Navigations.Count, state.Steps);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Budget was exhausted during synthesis; the task itself already
+            // succeeded, so swallow and move on.
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to write learned skill '{Name}'.", name);
+        }
+    }
+
+    private const string LearnedSkillSystemPrompt = """
+        You are writing a reusable skill for a browser-automation agent after a task just succeeded.
+
+        Output format:
+          - Line 1: a single-sentence summary of 15 words or less.
+          - Line 2: blank.
+          - Remainder: markdown explaining the flow so a future planner can repeat it efficiently. Cover: landing URL, key steps, selectors or labels that actually worked, known pitfalls.
+
+        Rules:
+          - Do NOT include credential values, secrets, or any specific text the user typed into fields.
+          - Do NOT fabricate details the trace does not show.
+          - Prefer the phrases a planner would search for later (site name, feature name).
+          - Keep it under ~400 words.
+        """;
+
+    private static string BuildLearnedSkillPrompt(BrowserTaskInput input, BrowserTaskState state, Skill? existing)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Intent: ").AppendLine(input.Intent);
+        sb.Append("Allowed hosts: ").AppendLine(string.Join(", ", input.Allowlist!.Patterns));
+        sb.Append("Navigations (in order): ").AppendLine(string.Join(" → ", state.Navigations.Select(u => u.ToString())));
+        sb.Append("Tool calls: ").Append(state.Steps).AppendLine(".");
+        if (!string.IsNullOrWhiteSpace(state.Summary))
+            sb.Append("Final summary: ").AppendLine(state.Summary);
+        if (!string.IsNullOrWhiteSpace(state.Result))
+            sb.Append("Final result: ").AppendLine(state.Result);
+        if (existing is not null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("A prior version of this skill exists — refine rather than rewrite when the content overlaps:");
+            sb.AppendLine(existing.Content);
+        }
+        return sb.ToString();
+    }
+
+    private static (string Summary, string Content) SplitSummaryAndContent(string text)
+    {
+        var lines = text.Split('\n');
+        var summary = lines[0].Trim();
+        if (summary.Length > 200)
+            summary = summary[..200];
+        var content = lines.Length > 1
+            ? string.Join('\n', lines.Skip(1)).TrimStart('\n', '\r', ' ')
+            : text;
+        return (summary, string.IsNullOrWhiteSpace(content) ? text : content);
+    }
+
+    private static string Slugify(string intent)
+    {
+        var sb = new StringBuilder(capacity: Math.Min(intent.Length, 64));
+        var lastDash = true;
+        foreach (var ch in intent.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+                lastDash = false;
+            }
+            else if (!lastDash && sb.Length < 64)
+            {
+                sb.Append('-');
+                lastDash = true;
+            }
+            if (sb.Length >= 64) break;
+        }
+        var slug = sb.ToString().Trim('-');
+        return string.IsNullOrEmpty(slug) ? "task" : slug;
     }
 
     private static AgentTaskResult BuildResult(

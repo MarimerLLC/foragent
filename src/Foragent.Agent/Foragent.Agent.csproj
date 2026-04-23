@@ -3,6 +3,9 @@
     <UserSecretsId>foragent-agent</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Foragent.Agent.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="A2A" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />

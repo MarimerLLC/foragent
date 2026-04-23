@@ -1,5 +1,4 @@
 using Foragent.Capabilities.BrowserTask;
-using Foragent.Capabilities.SitePosting;
 using Microsoft.Extensions.DependencyInjection;
 using RockBot.A2A;
 
@@ -16,9 +15,8 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
     {
         services.AddScoped<ICapability, FetchPageTitleCapability>();
         services.AddScoped<ICapability, ExtractStructuredDataCapability>();
-        services.AddScoped<ICapability, PostToSiteCapability>();
         services.AddScoped<ICapability, BrowserTaskCapability>();
-        services.AddScoped<ISitePoster, BlueskySitePoster>();
+        services.AddScoped<BrowserTaskPriming>();
         services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
         return services;
     }
@@ -36,7 +34,6 @@ public static class ForagentCapabilities
     [
         BrowserTaskCapability.SkillDefinition,
         FetchPageTitleCapability.SkillDefinition,
-        ExtractStructuredDataCapability.SkillDefinition,
-        PostToSiteCapability.SkillDefinition
+        ExtractStructuredDataCapability.SkillDefinition
     ];
 }
