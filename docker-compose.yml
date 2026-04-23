@@ -5,8 +5,11 @@
 #   - foragent        — this project; exposes HTTP A2A on port 5210
 #   - rockbot-init    — seeds /data/agent with RockBot profile + well-known-agents.json
 #                       pointing at foragent
-#   - rockbot         — rockylhotka/rockbot-agent:0.8.5, configured to know Foragent
-#                       as an A2A peer it can delegate tasks to
+#   - rockbot         — rockylhotka/rockbot-agent:0.9.11, configured to know Foragent
+#                       as an A2A peer it can delegate tasks to. 0.9.11 brings
+#                       the structured-data invoke_agent surface (PR #291) so
+#                       RockBot can consume Foragent's FormSchema JSON results
+#                       natively, not as text.
 #   - blazor          — rockylhotka/rockbot-blazor:latest, web UI for chatting with
 #                       the rockbot agent. Open http://localhost:8080 to test.
 #
@@ -61,7 +64,7 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — browser-task (generalist), fetch-page-title, extract-structured-data"
+      Gateway__Description: "Browser agent — browser-task (generalist), learn-form-schema, execute-form-batch, fetch-page-title, extract-structured-data"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
@@ -97,7 +100,7 @@ services:
       - foragent-data:/data/foragent
 
   rockbot-init:
-    image: rockylhotka/rockbot-agent:0.8.5
+    image: rockylhotka/rockbot-agent:0.9.11
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -133,7 +136,7 @@ services:
       - ./deploy/rockbot-seed:/seed:ro
 
   rockbot:
-    image: rockylhotka/rockbot-agent:0.8.5
+    image: rockylhotka/rockbot-agent:0.9.11
     depends_on:
       rockbot-init:
         condition: service_completed_successfully

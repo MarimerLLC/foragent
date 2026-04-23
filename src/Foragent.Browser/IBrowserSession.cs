@@ -65,6 +65,20 @@ public interface IBrowserPage : IAsyncDisposable
     Task ClickAsync(string selector, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Selects the option with <paramref name="value"/> in the <c>&lt;select&gt;</c>
+    /// matched by <paramref name="selector"/>. Throws if the option is absent.
+    /// </summary>
+    Task SelectOptionAsync(string selector, string value, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the checked state of a checkbox or radio input matched by
+    /// <paramref name="selector"/>. Unlike <see cref="ClickAsync"/>, this is
+    /// idempotent — calling with <c>true</c> when the box is already checked
+    /// is a no-op rather than a toggle.
+    /// </summary>
+    Task SetCheckedAsync(string selector, bool checked_, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Waits until the element matched by <paramref name="selector"/> is attached
     /// and visible. Throws <see cref="TimeoutException"/> on timeout.
     /// </summary>
@@ -82,6 +96,18 @@ public interface IBrowserPage : IAsyncDisposable
     /// messages or confirmation text.
     /// </summary>
     Task<string?> GetTextAsync(string selector, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Scans the first <c>&lt;form&gt;</c> matching <paramref name="formSelector"/>
+    /// (or the first form on the page when <paramref name="formSelector"/> is
+    /// <c>null</c>) and returns a structured description of its inputs, selects,
+    /// textareas, labels, validation attributes, and submit button. Produces no
+    /// LLM output — purely deterministic DOM reading — so callers can use it as
+    /// the skeleton for a typed <c>FormSchema</c>. Returns <c>null</c> when no
+    /// form is found. Radio groups are collapsed to a single field per name
+    /// with all options enumerated.
+    /// </summary>
+    Task<FormScan?> ScanFormAsync(string? formSelector = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -133,6 +159,56 @@ public interface IBrowserAgentPage : IAsyncDisposable
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// A deterministic rendering of an HTML form. Produced by
+/// <see cref="IBrowserPage.ScanFormAsync"/>; the <c>learn-form-schema</c>
+/// capability lifts this into the wire-level <c>FormSchema</c> with optional
+/// LLM enrichment (dropdown dependencies, validation hints).
+/// </summary>
+/// <param name="Url">The URL the scan was taken on (after redirects).</param>
+/// <param name="FormSelector">A CSS selector that reaches the scanned form — either the one the caller passed in, or a generated one based on the form's id/name.</param>
+/// <param name="SubmitSelector">Selector for the form's submit control, or <c>null</c> if none was detected.</param>
+/// <param name="Fields">Fields detected in document order. Radio groups appear once per group name.</param>
+public sealed record FormScan(
+    Uri Url,
+    string FormSelector,
+    string? SubmitSelector,
+    IReadOnlyList<FormScanField> Fields);
+
+/// <summary>
+/// One field detected by <see cref="IBrowserPage.ScanFormAsync"/>. Carries raw
+/// HTML attributes — the capability layer decides how to map <see cref="Tag"/>
+/// + <see cref="InputType"/> to its typed <c>FormFieldType</c>.
+/// </summary>
+/// <param name="Tag">The element tag — <c>input</c>, <c>select</c>, or <c>textarea</c>.</param>
+/// <param name="InputType">The <c>type</c> attribute for <c>&lt;input&gt;</c> elements (<c>text</c>, <c>email</c>, …); <c>null</c> for non-input tags.</param>
+/// <param name="Name">The <c>name</c> attribute, or <c>null</c>.</param>
+/// <param name="Id">The <c>id</c> attribute, or <c>null</c>.</param>
+/// <param name="Label">Visible label text resolved via <c>label[for=id]</c>, a wrapping <c>&lt;label&gt;</c>, <c>aria-label</c>, or the placeholder.</param>
+/// <param name="Required">Whether the element carries the <c>required</c> attribute.</param>
+/// <param name="Pattern">The HTML5 <c>pattern</c> attribute, or <c>null</c>.</param>
+/// <param name="Min">The HTML5 <c>min</c> attribute, or <c>null</c>.</param>
+/// <param name="Max">The HTML5 <c>max</c> attribute, or <c>null</c>.</param>
+/// <param name="MaxLength">The HTML5 <c>maxlength</c> attribute, or <c>null</c> when unspecified or non-positive.</param>
+/// <param name="Options">Enumerated options for <c>select</c> and radio groups; <c>null</c> for free-text fields.</param>
+/// <param name="Selector">A CSS selector the capability can use to drive the field; <c>null</c> when neither name nor id is present.</param>
+public sealed record FormScanField(
+    string Tag,
+    string? InputType,
+    string? Name,
+    string? Id,
+    string? Label,
+    bool Required,
+    string? Pattern,
+    string? Min,
+    string? Max,
+    int? MaxLength,
+    IReadOnlyList<FormScanOption>? Options,
+    string? Selector);
+
+/// <summary>An option entry for a <c>&lt;select&gt;</c> or radio group.</summary>
+public sealed record FormScanOption(string Value, string? Label);
 
 /// <summary>
 /// A compact rendering of a page suitable for LLM prompting.

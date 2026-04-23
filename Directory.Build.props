@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <Version>0.1.0-alpha</Version>
+    <Version>0.2.0-alpha.8</Version>
     <Authors>Marimer LLC</Authors>
     <Company>Marimer LLC</Company>
     <Copyright>Copyright (c) Marimer LLC</Copyright>
