@@ -81,6 +81,12 @@ services:
       # mounted volume below so learned site knowledge survives restarts.
       ForagentMemory__SkillsPath: /data/foragent/skills
       ForagentMemory__MemoryPath: /data/foragent/memory
+      # Step 7.5: daily dream pass to consolidate accumulated skills +
+      # memory. Disabled by default in appsettings.json so `dotnet run` smoke
+      # tests don't burn tokens; opt-in here because the compose harness is
+      # the "full operating mode" shape. CronSchedule default is 03:00 UTC
+      # daily — override via ForagentDreams__CronSchedule if needed.
+      ForagentDreams__Enabled: "true"
       # Optional Bluesky credential used by future credentialed browser-task
       # runs. Flat id (no slashes) because env-var keys use __ to separate
       # config segments. Leave unset to disable.

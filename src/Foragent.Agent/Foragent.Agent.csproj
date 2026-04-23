@@ -25,4 +25,11 @@
     <ProjectReference Include="..\Foragent.Capabilities\Foragent.Capabilities.csproj" />
     <ProjectReference Include="..\Foragent.Credentials\Foragent.Credentials.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Dream directives (step 7.5). DreamService resolves directive paths
+         relative to AgentProfileOptions.BasePath; with a relative BasePath
+         they combine against AppContext.BaseDirectory (the binary output
+         dir), so shipping the markdown alongside the binary is enough. -->
+    <Content Include="directives\*.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
