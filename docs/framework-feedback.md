@@ -409,3 +409,78 @@ scenarios still pass on first attempt — the priming wiring itself adds
 no overhead when the stores return nothing, confirming the fail-soft
 contract. A separate benchmark with a populated store is step-8-or-later
 work (need a curated skill set worth priming against).
+
+## Step 7.5 — dream loop
+
+### Framework observations
+
+- **Dream directives don't ship with the framework.** `DreamOptions`
+  defaults to bare filenames (`dream.md`, `skill-optimize.md`,
+  `sequence-skill.md`, etc.) that `DreamService` reads at runtime. The
+  `RockBot.Host`/`RockBot.Host.Abstractions` assemblies carry **zero
+  embedded resources** — no `.md` defaults, no stub directives. The
+  RockBot agent ships its directive set inside its docker image
+  (`/app/agent/*.md`), and `docker-compose.yml`'s `rockbot-init` step
+  copies them to `/data/agent/`. This is intentional (per operator
+  guidance: the framework can't know what any given consumer needs),
+  but it means every new framework consumer carries a ~300-line
+  directive-authoring cost as a prerequisite to turning on dreams.
+  Candidate framework offering (not an ask, since the intentionality
+  is real): optional companion packages like
+  `RockBot.Host.Directives.Personality` and
+  `RockBot.Host.Directives.Task` that ship starter directive sets,
+  selectable by `WithDreaming(opts => opts.UsePersonalityDefaults())`
+  or similar. Reduces onboarding cost without compromising the
+  no-hardcoded-content principle.
+
+- **Directive paths resolve via `AgentProfileOptions.BasePath`.** IL
+  inspection of `DreamService`'s `ResolvePath` helper confirms: for
+  each directive (e.g. `opts.SkillOptimizeDirectivePath =
+  "skill-optimize.md"`), the final path is:
+  `Path.Combine(basePath, directive)` where `basePath` comes from
+  `IOptions<AgentProfileOptions>.Value.BasePath`. If `basePath` is
+  relative, it combines against `AppContext.BaseDirectory` (binary
+  output dir). Foragent configures `AgentProfileOptions.BasePath =
+  "directives"` and ships markdown files alongside the binary via
+  `CopyToOutputDirectory=PreserveNewest` — no `WithProfile()` call
+  needed. Worth documenting in RockBot's dream-loop guide: consumers
+  that don't load a personality profile still need to Configure the
+  options type because that's the single source of truth for directive
+  base paths.
+
+- **`DreamService`'s constructor pulls 17 dependencies.** Everything
+  the dream subtypes might need (`IConversationLog`, `IDlqSampler`,
+  `IWispExecutionLog`, `IKnowledgeGraph`, `TierRoutingLogger`, …) is a
+  hard ctor parameter, so the framework registers stub / no-op
+  implementations for the ones a given agent doesn't use. Works, but
+  consumers who turn off a subtype shouldn't need its stores in DI at
+  all. Candidate framework refactor: make the subtype dependencies
+  optional (`IEnumerable<IDreamSubtype>` or similar) so
+  `DreamService.StartAsync` enumerates whatever's registered and skips
+  what isn't. Lower priority than the directives ask.
+
+- **`ProtectedSkillPrefixes` literal-only.** The list is
+  `List<string>` and (from the IL) matched via `StartsWith` — no
+  wildcard expansion. Foragent ships it empty; operators can add
+  specific literals if they need to freeze a skill. Noting because
+  wildcard-style patterns (`sites/*/login`) would be a natural
+  extension and aren't there today.
+
+### Manual verification plan
+
+Automated tests for the dream loop would require faking the scheduler
+and running an end-to-end pass — out of scope. Verified manually via
+docker-compose:
+
+- Container starts with `ForagentDreams__Enabled=true` → startup log
+  shows `ForagentDreams enabled; daily dream pass on schedule '0 3 * *
+  *'`.
+- Container starts with dreams disabled → log shows the opposite and
+  `DreamService` is not registered.
+- Directive files present at `/app/directives/*.md` inside the
+  container (verified via `docker compose exec foragent ls
+  /app/directives/`).
+
+First live dream pass against a non-empty skill store will be observed
+after enough `browser-task` runs accumulate — probably step 8 or when
+the operator turns the harness on for a sustained session.
