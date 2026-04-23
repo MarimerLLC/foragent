@@ -27,6 +27,35 @@ internal static class TestContext
         };
     }
 
+    /// <summary>
+    /// Builds a request that carries a structured payload on an A2A DataPart
+    /// (<c>Kind = "data"</c>), matching what RockBot's <c>invoke_agent</c> tool
+    /// produces when the caller populates its <c>data</c> parameter. An
+    /// optional prose text part can be supplied for the human-readable
+    /// message; omit for pure data-only requests.
+    /// </summary>
+    public static AgentTaskRequest RequestWithData(
+        string skill,
+        string dataJson,
+        string? text = null)
+    {
+        var parts = new List<AgentMessagePart>();
+        if (text is not null)
+            parts.Add(new AgentMessagePart { Kind = "text", Text = text });
+        parts.Add(new AgentMessagePart { Kind = "data", Data = dataJson, MimeType = "application/json" });
+        return new AgentTaskRequest
+        {
+            TaskId = Guid.NewGuid().ToString(),
+            ContextId = "ctx",
+            Skill = skill,
+            Message = new AgentMessage
+            {
+                Role = "user",
+                Parts = parts
+            }
+        };
+    }
+
     public static AgentTaskRequest RequestWithMetadata(
         string skill,
         string? text = null,

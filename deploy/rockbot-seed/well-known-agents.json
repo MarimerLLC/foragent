@@ -1,7 +1,7 @@
 [
   {
     "agentName": "Foragent",
-    "description": "Browser agent — navigates pages with Chromium and exposes task-level skills over HTTP A2A.",
+    "description": "Browser agent — navigates pages with Chromium and exposes task-level skills over HTTP A2A. All skills consume structured input on the A2A DataPart (invoke_agent 'data' parameter); the text 'message' is only for human-readable summaries.",
     "version": "1.0",
     "url": "http://foragent:8080",
     "protocolVersion": "1.0",
@@ -11,17 +11,17 @@
       {
         "id": "browser-task",
         "name": "Browser Task (generalist)",
-        "description": "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. Input JSON {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. allowedHosts is required and empty rejects. Returns a structured JSON result with status (done/failed/incomplete), summary, optional result, step count, and navigations."
+        "description": "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. PASS INPUT AS AN A2A DATA PART — populate invoke_agent's 'data' parameter with {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. 'intent' and 'allowedHosts' are required; an empty allowlist rejects the task. Use [\"*\"] explicitly when any host is acceptable. Returns a structured JSON result with status (done/failed/incomplete), summary, optional result, step count, and navigations."
       },
       {
         "id": "learn-form-schema",
         "name": "Learn Form Schema",
-        "description": "Navigate to a URL, introspect the first form, and return a typed FormSchema (fields, types, required, options, dependencies). Persists the schema as a skill at sites/{host}/forms/{slug} for later reuse by execute-form-batch."
+        "description": "Navigate to a web form, extract its structure (fields, types, options, validation), and persist it as a reusable skill. PASS INPUT AS AN A2A DATA PART — populate invoke_agent's 'data' parameter with {\"url\":\"https://...\",\"allowedHosts\":[\"host\"],\"formSelector\":\"optional\",\"credentialId\":\"optional\",\"skillName\":\"optional override\",\"intent\":\"optional prose\"}. 'url' and 'allowedHosts' are required. Returns the typed form schema plus the skill name it was persisted under."
       },
       {
         "id": "execute-form-batch",
         "name": "Execute Form Batch",
-        "description": "Given a learned FormSchema (by ref or inline) and a batch of row data, submit the form once per row. Streams per-row progress. Default mode abort-on-first; opt into 'continue' for known-messy batches."
+        "description": "Submit a batch of rows against a learned form schema. PASS INPUT AS AN A2A DATA PART — populate invoke_agent's 'data' parameter with {\"schemaRef\":\"sites/host/forms/name\" OR \"schema\":{...FormSchema...},\"rows\":[{fieldName:value,...}],\"allowedHosts\":[\"host\"],\"credentialId\":\"optional\",\"mode\":\"abort-on-first\"|\"continue\",\"successIndicator\":\"optional CSS selector\"}. 'rows', 'allowedHosts', and exactly one of schemaRef/schema are required. Streams per-row progress. Default mode aborts on first failure."
       }
     ]
   }

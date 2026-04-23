@@ -39,6 +39,29 @@ public class LearnFormSchemaCapabilityTests
     }
 
     [Fact]
+    public async Task AcceptsStructuredInput_OnDataPart()
+    {
+        var scan = SampleScan();
+        var (cap, factory, skills) = Build();
+        var page = new StubBrowserPage { FormScan = scan };
+        factory.PageResponder = (_, _) => Task.FromResult<IBrowserPage>(page);
+        var (ctx, _) = TestContext.Build();
+
+        var result = await cap.ExecuteAsync(
+            TestContext.RequestWithData(
+                "learn-form-schema",
+                dataJson: """{"url":"https://example.com/contact","allowedHosts":["example.com"]}""",
+                text: "Learn the schema of the contact form."),
+            ctx);
+
+        Assert.Equal(AgentTaskState.Completed, result.State);
+        using var doc = JsonDocument.Parse(TestContext.TextOf(result));
+        Assert.Equal("done", doc.RootElement.GetProperty("status").GetString());
+        var skillName = doc.RootElement.GetProperty("skillName").GetString()!;
+        Assert.StartsWith("sites/example-com/forms/", skillName);
+    }
+
+    [Fact]
     public async Task RejectsInput_WhenUrlOffAllowlist()
     {
         var (cap, _, _) = Build();

@@ -30,7 +30,10 @@ public sealed class ExecuteFormBatchCapability(
         Id = "execute-form-batch",
         Name = "Execute Form Batch",
         Description = "Submit a batch of rows against a learned form schema. "
-            + "Input: JSON {\"schemaRef\":\"sites/host/forms/name\" OR \"schema\":{...FormSchema...},\"rows\":[{field:value,...}],\"allowedHosts\":[\"host\"],\"credentialId\":\"optional\",\"mode\":\"abort-on-first\"|\"continue\",\"successIndicator\":\"optional CSS selector\"}. "
+            + "PASS INPUT AS AN A2A DATA PART (a structured JSON object), not as prose inside the text message. "
+            + "When calling via RockBot's invoke_agent, populate the 'data' parameter with this object — the multi-row shape doesn't fit in plain text. "
+            + "Fields: {\"schemaRef\":\"sites/host/forms/name\" OR \"schema\":{...FormSchema...},\"rows\":[{fieldName:value,...}],\"allowedHosts\":[\"host\"],\"credentialId\":\"optional\",\"mode\":\"abort-on-first\"|\"continue\",\"successIndicator\":\"optional CSS selector\"}. "
+            + "'rows', 'allowedHosts', and exactly one of 'schemaRef'/'schema' are REQUIRED. "
             + "Streams per-row progress. Default mode aborts on first failure."
     };
 

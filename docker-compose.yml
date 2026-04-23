@@ -5,7 +5,7 @@
 #   - foragent        — this project; exposes HTTP A2A on port 5210
 #   - rockbot-init    — seeds /data/agent with RockBot profile + well-known-agents.json
 #                       pointing at foragent
-#   - rockbot         — rockylhotka/rockbot-agent:0.9.11, configured to know Foragent
+#   - rockbot         — rockylhotka/rockbot-agent:0.9.14, configured to know Foragent
 #                       as an A2A peer it can delegate tasks to. 0.9.11 brings
 #                       the structured-data invoke_agent surface (PR #291) so
 #                       RockBot can consume Foragent's FormSchema JSON results
@@ -115,7 +115,7 @@ services:
       - foragent-data:/data/foragent
 
   rockbot-init:
-    image: rockylhotka/rockbot-agent:0.9.11
+    image: rockylhotka/rockbot-agent:0.9.14
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -151,7 +151,7 @@ services:
       - ./deploy/rockbot-seed:/seed:ro
 
   rockbot:
-    image: rockylhotka/rockbot-agent:0.9.11
+    image: rockylhotka/rockbot-agent:0.9.14
     depends_on:
       rockbot-init:
         condition: service_completed_successfully

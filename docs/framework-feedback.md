@@ -676,3 +676,30 @@ validation that didn't actually work without them.
   not framework — noting here because it's the kind of thing that
   could bite any RockBot consumer that mounts persistent state as a
   named volume.
+- **Structured A2A input requires a DataPart, not JSON-in-text** —
+  running RockBot → Foragent through the Blazor UI, the caller LLM
+  kept looping on `"Missing 'allowedHosts'"` rejections. Root cause:
+  Foragent's three input parsers (`BrowserTaskInput`,
+  `LearnFormSchemaInput`, `ExecuteFormBatchInput`) only consumed the
+  first `Kind = "text"` part, requiring JSON-as-a-string. RockBot
+  0.9.11's `invoke_agent` tool instead sends structured fields as a
+  separate `AgentMessagePart { Kind = "data", Data = <json>,
+  MimeType = "application/json" }` when its `data` parameter is
+  filled — the proper A2A DataPart shape. But Foragent never
+  advertised that it consumed data parts, and `invoke_agent`'s tool
+  description steered the LLM away from sending them unless the
+  target was "known to consume data." The LLM saw Foragent's skill
+  description say "Input: JSON {…}" and interpreted that as
+  "stringify the JSON into message," which strict parsers reject,
+  which looped. **Fix**: taught all three parsers to read a
+  `Kind = "data"` part first; taught the skill descriptions to
+  explicitly say "PASS INPUT AS AN A2A DATA PART — populate
+  invoke_agent's 'data' parameter with …"; updated the seed card
+  identically. Framework-level observation: the A2A protocol cleanly
+  supports typed payloads via DataPart, but the interoperability
+  chain (sender's tool description ↔ target's skill description ↔
+  target's parser) all need to agree that the data part is the
+  canonical shape. RockBot's `invoke_agent` tool description was
+  softened upstream in 0.9.14 (removing the "most agents only
+  understand text" steer) to help with this — consumers should
+  upgrade when available.

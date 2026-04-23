@@ -34,7 +34,11 @@ public sealed class BrowserTaskCapability(
         Id = "browser-task",
         Name = "Browser Task (generalist)",
         Description = "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. "
-            + "Input: JSON {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. "
+            + "PASS INPUT AS AN A2A DATA PART (a structured JSON object), not as prose inside the text message. "
+            + "When calling via RockBot's invoke_agent, populate the 'data' parameter with this object; "
+            + "the text 'message' should only be a human-readable summary. "
+            + "Fields: {\"intent\":\"what to accomplish\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. "
+            + "'intent' and 'allowedHosts' are REQUIRED — an empty allowlist rejects the task (spec §7.1). Use [\"*\"] explicitly when any host is acceptable. "
             + "Returns a short summary plus optional structured result string."
     };
 

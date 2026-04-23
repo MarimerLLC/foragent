@@ -40,6 +40,40 @@ public class ExecuteFormBatchCapabilityTests
     }
 
     [Fact]
+    public async Task AcceptsStructuredInput_OnDataPart()
+    {
+        var (cap, factory, skills) = Build();
+        await SeedSchemaAsync(skills, "sites/example.com/forms/contact", SampleSchema());
+        var page = SubmittingPage();
+        factory.PageResponder = (_, _) =>
+        {
+            page.CurrentUrl = new Uri("https://example.com/form");
+            return Task.FromResult<IBrowserPage>(page);
+        };
+
+        var (ctx, _) = TestContext.Build();
+
+        var result = await cap.ExecuteAsync(
+            TestContext.RequestWithData(
+                "execute-form-batch",
+                dataJson: """
+                {
+                  "schemaRef": "sites/example.com/forms/contact",
+                  "allowedHosts": ["example.com"],
+                  "rows": [
+                    {"email":"a@example.com","message":"hi"}
+                  ]
+                }
+                """,
+                text: "Submit one contact form row."),
+            ctx);
+
+        using var doc = JsonDocument.Parse(TestContext.TextOf(result));
+        Assert.Equal("done", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("successCount").GetInt32());
+    }
+
+    [Fact]
     public async Task ResolvesSchemaFromRef_AndSubmitsRows()
     {
         var (cap, factory, skills) = Build();

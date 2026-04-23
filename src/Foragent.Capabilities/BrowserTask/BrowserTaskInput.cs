@@ -6,9 +6,18 @@ namespace Foragent.Capabilities.BrowserTask;
 /// <summary>
 /// Parses the <c>browser-task</c> input shape (spec §5.2).
 ///
-/// Accepts either a JSON object in the first text part or field-by-field
-/// metadata on the message/request. Metadata overrides JSON when both are
-/// present. Shape:
+/// Accepts structured input in three forms, checked in order:
+/// <list type="number">
+///   <item>An A2A <c>DataPart</c> (message part with <c>Kind = "data"</c>,
+///   <c>MimeType = "application/json"</c>) carrying the JSON object. This
+///   is the preferred shape and the one RockBot's <c>invoke_agent</c> tool
+///   produces when the caller fills its <c>data</c> parameter.</item>
+///   <item>A JSON object in the first text part (curl callers, agents that
+///   don't use data parts).</item>
+///   <item>Field-by-field metadata on the message/request. Metadata
+///   overrides fields from the JSON source when both are present.</item>
+/// </list>
+/// Shape:
 /// <list type="bullet">
 ///   <item><c>intent</c> — required. Free-form description of what to do.</item>
 ///   <item><c>allowedHosts</c> — required. Array of host patterns. Empty rejects.</item>
@@ -41,18 +50,30 @@ internal readonly record struct BrowserTaskInput(
         int? maxSteps = null;
         int? maxSeconds = null;
 
+        // Preferred shape: RockBot's invoke_agent sends structured fields as
+        // a DataPart alongside the prose text part. Prefer it when present so
+        // the text part can stay human-readable.
+        var dataJson = request.Message.Parts
+            .Where(p => p.Kind == "data" && !string.IsNullOrWhiteSpace(p.Data))
+            .Select(p => p.Data)
+            .FirstOrDefault();
+
         var text = request.Message.Parts
             .Where(p => p.Kind == "text")
             .Select(p => p.Text)
             .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))
             ?.Trim();
 
-        if (!string.IsNullOrEmpty(text) && text.StartsWith('{'))
+        string? jsonPayload = dataJson ?? (!string.IsNullOrEmpty(text) && text.StartsWith('{') ? text : null);
+
+        if (jsonPayload is not null)
         {
             try
             {
-                using var doc = JsonDocument.Parse(text);
+                using var doc = JsonDocument.Parse(jsonPayload);
                 var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return Fail("Structured input must be a JSON object.");
                 if (root.TryGetProperty("intent", out var i)) intent = i.GetString();
                 if (root.TryGetProperty("url", out var u)) url = u.GetString();
                 if (root.TryGetProperty("credentialId", out var c)) credentialId = c.GetString();
@@ -67,6 +88,12 @@ internal readonly record struct BrowserTaskInput(
             {
                 return Fail("Input must be a JSON object with intent, allowedHosts, and optional url/credentialId/maxSteps/maxSeconds.");
             }
+
+            // When a DataPart carried the structured fields, the text part is
+            // the human-readable prose from the caller — use it as a fallback
+            // intent if the data part didn't supply one.
+            if (string.IsNullOrWhiteSpace(intent) && !string.IsNullOrEmpty(text) && !text.StartsWith('{'))
+                intent = text;
         }
         else if (!string.IsNullOrEmpty(text))
         {

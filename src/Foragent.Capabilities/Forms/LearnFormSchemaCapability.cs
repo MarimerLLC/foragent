@@ -29,7 +29,10 @@ public sealed class LearnFormSchemaCapability(
         Id = "learn-form-schema",
         Name = "Learn Form Schema",
         Description = "Navigate to a web form, extract its structure (fields, types, options, validation), and persist it as a reusable skill. "
-            + "Input: JSON {\"url\":\"https://...\",\"allowedHosts\":[\"host\"],\"formSelector\":\"optional\",\"credentialId\":\"optional\",\"skillName\":\"optional override\",\"intent\":\"optional prose\"}. "
+            + "PASS INPUT AS AN A2A DATA PART (a structured JSON object), not as prose inside the text message. "
+            + "When calling via RockBot's invoke_agent, populate the 'data' parameter with this object. "
+            + "Fields: {\"url\":\"https://...\",\"allowedHosts\":[\"host\"],\"formSelector\":\"optional CSS selector\",\"credentialId\":\"optional\",\"skillName\":\"optional override\",\"intent\":\"optional prose\"}. "
+            + "'url' and 'allowedHosts' are REQUIRED (spec §7.1). "
             + "Returns the typed form schema plus the skill name it was persisted under."
     };
 

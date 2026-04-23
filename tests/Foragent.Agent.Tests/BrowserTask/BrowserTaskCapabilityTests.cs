@@ -65,6 +65,55 @@ public class BrowserTaskCapabilityTests
     }
 
     [Fact]
+    public async Task AcceptsStructuredInput_OnDataPart()
+    {
+        // Simulates the shape RockBot's invoke_agent produces when the caller
+        // fills its 'data' parameter: a text part with human prose plus a
+        // DataPart with the structured JSON. The data part wins over any
+        // JSON embedded in text.
+        var (capability, page, _) = Build(
+            ScriptedChatClient.ToolCall("snapshot"),
+            ScriptedChatClient.ToolCall("done", new { summary = "picked up from DataPart" }),
+            ScriptedChatClient.Text("stopping"));
+        var (ctx, _) = TestContext.Build();
+
+        var result = await capability.ExecuteAsync(
+            TestContext.RequestWithData(
+                "browser-task",
+                dataJson: """{"intent":"read the page title","url":"https://example.com/","allowedHosts":["example.com"]}""",
+                text: "Please read the page title for me."),
+            ctx);
+
+        Assert.Equal(AgentTaskState.Completed, result.State);
+        using var doc = JsonDocument.Parse(TestContext.TextOf(result));
+        Assert.Equal("done", doc.RootElement.GetProperty("status").GetString());
+        Assert.Contains("snapshot", page.Actions);
+    }
+
+    [Fact]
+    public async Task DataPart_UsesProseTextAsIntentFallback()
+    {
+        // If the DataPart doesn't carry 'intent' but the text part is prose,
+        // the text fills in for intent. Lets callers keep 'intent' in the
+        // data payload without duplicating it in the message.
+        var (capability, _, _) = Build(
+            ScriptedChatClient.ToolCall("done", new { summary = "ok" }),
+            ScriptedChatClient.Text("stopping"));
+        var (ctx, _) = TestContext.Build();
+
+        var result = await capability.ExecuteAsync(
+            TestContext.RequestWithData(
+                "browser-task",
+                dataJson: """{"allowedHosts":["example.com"],"url":"https://example.com/"}""",
+                text: "Find the title of the page."),
+            ctx);
+
+        Assert.Equal(AgentTaskState.Completed, result.State);
+        using var doc = JsonDocument.Parse(TestContext.TextOf(result));
+        Assert.Equal("done", doc.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task Fail_ReturnsFailedStatus()
     {
         var (capability, _, _) = Build(
