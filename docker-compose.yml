@@ -61,7 +61,7 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — fetch-page-title, extract-structured-data, post-to-site"
+      Gateway__Description: "Browser agent — browser-task (generalist), fetch-page-title, extract-structured-data, post-to-site"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot

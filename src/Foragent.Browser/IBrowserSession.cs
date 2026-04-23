@@ -33,6 +33,16 @@ public interface IBrowserSession : IAsyncDisposable
     /// finished, dispose the session when the task ends.
     /// </summary>
     Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a page suited to an LLM-in-the-loop planner: exposes
+    /// ref-annotated aria snapshots (<see cref="IBrowserAgentPage.AriaSnapshotAsync"/>)
+    /// and ref-based interactions resolved via Playwright's <c>aria-ref=eN</c>
+    /// locator dialect. No initial URL is required; the planner drives
+    /// navigation through its own tool calls. Used by the
+    /// <c>browser-task</c> generalist (spec §5.2).
+    /// </summary>
+    Task<IBrowserAgentPage> OpenAgentPageAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -75,6 +85,56 @@ public interface IBrowserPage : IAsyncDisposable
 }
 
 /// <summary>
+/// Ref-based page surface for LLM-in-the-loop planners. Each call to
+/// <see cref="AriaSnapshotAsync"/> returns a tree annotated with
+/// <c>[ref=eN]</c> ids; <see cref="ClickByRefAsync"/>, <see cref="TypeByRefAsync"/>,
+/// and <see cref="WaitForRefAsync"/> resolve those refs via Playwright's
+/// <c>aria-ref=eN</c> locator dialect. Refs are valid only within the
+/// snapshot they came from — the planner must re-snapshot after any
+/// mutation (spec §9.1 step 6, decision D1 — no cache).
+/// </summary>
+public interface IBrowserAgentPage : IAsyncDisposable
+{
+    /// <summary>The current URL, after any redirects and client-side navigations.</summary>
+    Uri CurrentUrl { get; }
+
+    /// <summary>The current page title, or <c>null</c> if absent.</summary>
+    Task<string?> GetTitleAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Navigates to <paramref name="url"/>. The implementation must respect
+    /// the session's allowlist — off-list navigations fail with
+    /// <see cref="InvalidOperationException"/> before Playwright issues the request.
+    /// </summary>
+    Task NavigateAsync(Uri url, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a ref-annotated aria snapshot of the current page. Each
+    /// interactive element carries <c>[ref=eN]</c>; planners pass the ref
+    /// back to <see cref="ClickByRefAsync"/>/<see cref="TypeByRefAsync"/>.
+    /// </summary>
+    Task<string> AriaSnapshotAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Clicks the element identified by <paramref name="elementRef"/> (e.g. <c>e12</c>).</summary>
+    Task ClickByRefAsync(string elementRef, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fills the element identified by <paramref name="elementRef"/>. Used for
+    /// input/textarea/contenteditable. Sensitive values must not be logged.
+    /// </summary>
+    Task TypeByRefAsync(string elementRef, string text, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Waits until the element identified by <paramref name="elementRef"/> is
+    /// visible. Throws <see cref="TimeoutException"/> on timeout.
+    /// </summary>
+    Task WaitForRefAsync(
+        string elementRef,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// A compact rendering of a page suitable for LLM prompting.
 /// </summary>
 /// <param name="Url">The final URL after any redirects.</param>
@@ -97,4 +157,15 @@ public enum PageSnapshotSource
 public interface IBrowserSessionFactory
 {
     Task<IBrowserSession> CreateSessionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a session whose navigations and subframe loads are restricted to
+    /// hosts accepted by <paramref name="allowedHost"/>. An off-list request is
+    /// aborted inside the browser context before Playwright issues it
+    /// (spec §7.1). Passing a predicate that always returns <c>false</c>
+    /// effectively rejects all navigation.
+    /// </summary>
+    Task<IBrowserSession> CreateSessionAsync(
+        Func<Uri, bool> allowedHost,
+        CancellationToken cancellationToken = default);
 }
