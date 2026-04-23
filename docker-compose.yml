@@ -21,7 +21,7 @@
 #   curl -X POST http://localhost:5210/ \
 #     -H "X-Api-Key: rockbot-calls-foragent" \
 #     -H "Content-Type: application/json" \
-#     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"https://example.com"}]},"metadata":{"skill":"fetch-page-title"}}}'
+#     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"{\"intent\":\"fetch the page title\",\"url\":\"https://example.com\",\"allowedHosts\":[\"example.com\"]}"}]},"metadata":{"skill":"browser-task"}}}'
 # Note: the A2A v1-preview schema uses protobuf-style enum values (ROLE_USER, not "user")
 # and parts are bare {"text":"..."} objects — no "kind" field.
 #
@@ -64,12 +64,12 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — browser-task (generalist), learn-form-schema, execute-form-batch, fetch-page-title, extract-structured-data"
+      Gateway__Description: "Browser agent — browser-task (generalist), learn-form-schema, execute-form-batch"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
-      # LLM required for the extract-structured-data capability. Namespaced so
-      # Foragent can point at a different model than the RockBot side.
+      # LLM required for the browser-task planner and form-schema enrichment.
+      # Namespaced so Foragent can point at a different model than the RockBot side.
       ForagentLlm__Endpoint: ${FORAGENT_LLM_ENDPOINT:?FORAGENT_LLM_ENDPOINT is required}
       ForagentLlm__ModelId: ${FORAGENT_LLM_MODEL_ID:?FORAGENT_LLM_MODEL_ID is required}
       ForagentLlm__ApiKey: ${FORAGENT_LLM_API_KEY:?FORAGENT_LLM_API_KEY is required}

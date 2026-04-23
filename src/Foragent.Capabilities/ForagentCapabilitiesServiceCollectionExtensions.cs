@@ -14,8 +14,6 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddForagentCapabilities(this IServiceCollection services)
     {
-        services.AddScoped<ICapability, FetchPageTitleCapability>();
-        services.AddScoped<ICapability, ExtractStructuredDataCapability>();
         services.AddScoped<ICapability, BrowserTaskCapability>();
         services.AddScoped<ICapability, LearnFormSchemaCapability>();
         services.AddScoped<ICapability, ExecuteFormBatchCapability>();
@@ -38,8 +36,6 @@ public static class ForagentCapabilities
     [
         BrowserTaskCapability.SkillDefinition,
         LearnFormSchemaCapability.SkillDefinition,
-        ExecuteFormBatchCapability.SkillDefinition,
-        FetchPageTitleCapability.SkillDefinition,
-        ExtractStructuredDataCapability.SkillDefinition
+        ExecuteFormBatchCapability.SkillDefinition
     ];
 }

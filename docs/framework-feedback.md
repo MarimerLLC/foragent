@@ -573,3 +573,62 @@ the operator turns the harness on for a sustained session.
   `FORAGENT_LLM_*`.
 - Existing step-6 benchmark still 3/3 — framework bump didn't regress
   anything else.
+
+## Step 9 — Deprecate subsumed specialists
+
+Step 9 is a decision milestone, not a feature ship, so the framework
+observations are few. Advertised surface lands at three skills:
+`browser-task`, `learn-form-schema`, `execute-form-batch`.
+
+### What was deleted and why
+
+- **`fetch-page-title`** — milestone-1 smoke-test relic. Pure
+  specialist wrapping `<title>` reads. `browser-task` with intent
+  `"fetch the page title of <url>"` and `done.result` produces the
+  same value for ~2× the tokens, which is fine given no deterministic
+  high-volume caller actually exists.
+- **`extract-structured-data`** — single-turn typed extraction with
+  `ResponseFormat = Json`. Two deciding factors on top of the "no
+  caller" argument: (1) it was out of spec on §7.1 — it called the
+  no-argument `CreateSessionAsync` overload and accepted any host,
+  which the generalist refuses by design; (2) bringing it into spec
+  would have added mandatory `allowedHosts` to its input shape and
+  erased its simplicity advantage.
+- **`IBrowserSession.FetchPageTitleAsync` /
+  `CapturePageSnapshotAsync` / `PageSnapshot` / `PageSnapshotSource`**
+  — orphaned once the two capabilities went. Deleted from the
+  `Foragent.Browser` surface rather than left as dead code. The
+  `snapshot` tool inside `browser-task` uses `IBrowserAgentPage` and
+  never touched this API path.
+- **`CapabilityInput.Parse`** — the shared URL+description shim had
+  only the deleted specialists as consumers. `BrowserTaskInput`
+  handles its own shape; `Forms/*Input.cs` handles theirs. Deleted.
+- **Integration test `ExtractStructuredDataIntegrationTests`** — the
+  only `[SkippableFact]` in the browser-tests project that needed
+  `FORAGENT_LLM_*`. Removed; `BrowserTaskIntegrationTests` remains the
+  real-LLM benchmark.
+
+### Framework observations
+
+- **Capability-surface evolution is painless.** Removing
+  `ICapability` implementations is a three-line edit to
+  `ForagentCapabilitiesServiceCollectionExtensions` + a one-line edit
+  to the static `Skills` array. No framework API made the deletion
+  harder than it had to be — `IAgentTaskHandler.HandleTaskAsync` +
+  DI-resolved capabilities remain the right shape for a fast-moving
+  pre-1.0 product surface. Confirms that foragent#5 /
+  [rockbot#283](https://github.com/MarimerLLC/rockbot/issues/283) (per-skill
+  handler registration) is a quality-of-life improvement, not a
+  blocker.
+- **`AgentCard` and `Gateway:Skills` share one source of truth now.**
+  Post-step-1 refactor landed the `ForagentCapabilities.Skills` static
+  that both the A2A card and the HTTP gateway read from — step 9
+  touched exactly that one array and both sides updated. That worked
+  exactly as intended; the step-1 feedback entry about duplicate card
+  declarations is effectively closed on the Foragent side via the
+  local static. An upstream generalization — framework reads
+  `A2AOptions.Card.Skills` directly in the gateway — would remove the
+  small local static but isn't urgent.
+- **No spec open-questions closed or opened.** Open items #3, #4, #5,
+  #7 remain as written; #6 and #8 closed in step 8; #1 and #2 closed
+  in v0.2 spec adoption. v0.2 is the shipped minimum surface.

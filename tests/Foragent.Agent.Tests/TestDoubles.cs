@@ -88,12 +88,6 @@ internal sealed class StatusCapture
 
 internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
 {
-    public Func<Uri, CancellationToken, Task<string?>> TitleResponder { get; set; } =
-        (_, _) => Task.FromResult<string?>(null);
-
-    public Func<Uri, CancellationToken, Task<PageSnapshot>> SnapshotResponder { get; set; } =
-        (url, _) => Task.FromResult(new PageSnapshot(url, "stub", "stub content", PageSnapshotSource.Accessibility));
-
     public Func<Uri, CancellationToken, Task<IBrowserPage>> PageResponder { get; set; } =
         (_, _) => Task.FromResult<IBrowserPage>(new StubBrowserPage());
 
@@ -114,12 +108,6 @@ internal sealed class StubBrowserSessionFactory : IBrowserSessionFactory
 
     private sealed class StubSession(StubBrowserSessionFactory owner) : IBrowserSession
     {
-        public Task<string?> FetchPageTitleAsync(Uri url, CancellationToken ct = default) =>
-            owner.TitleResponder(url, ct);
-
-        public Task<PageSnapshot> CapturePageSnapshotAsync(Uri url, CancellationToken ct = default) =>
-            owner.SnapshotResponder(url, ct);
-
         public Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken ct = default) =>
             owner.PageResponder(url, ct);
 

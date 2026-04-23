@@ -52,12 +52,6 @@ internal sealed class FakeBrowserAgentPage : IBrowserAgentPage
 
 internal sealed class FakeAgentBrowserSession(FakeBrowserAgentPage page) : IBrowserSession
 {
-    public Task<string?> FetchPageTitleAsync(Uri url, CancellationToken ct = default) =>
-        throw new NotSupportedException();
-
-    public Task<PageSnapshot> CapturePageSnapshotAsync(Uri url, CancellationToken ct = default) =>
-        throw new NotSupportedException();
-
     public Task<IBrowserPage> OpenPageAsync(Uri url, CancellationToken ct = default) =>
         throw new NotSupportedException();
 

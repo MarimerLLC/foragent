@@ -311,15 +311,15 @@ callers cheap — not to proliferate.
 | `browser-task` | Generalist | Given intent + optional URL, credential id, and allowed-hosts list, plan and drive the browser to fulfill the intent. Uses RockBot skills + memory as priming. Returns a result or a structured intermediate artifact (e.g. a learned form schema). |
 | `learn-form-schema` | Specialist (phase-1) | Given a URL and optional credential, introspect a form and return its schema — fields, types, dropdown dependencies, validation rules. Persists the schema as a skill (§5.6). Returns the schema to the caller for review. |
 | `execute-form-batch` | Specialist (phase-2) | Given a learned schema (by id or inline) and a batch of row data, submit the form once per row. Streams A2A progress updates. Handles partial failure. |
-| `fetch-page-title` | Specialist | Return the `<title>` of a URL. Inherited from milestone 2. |
-| `extract-structured-data` | Specialist | Extract structured data from a page matching a natural-language description. Inherited from milestone 3. |
 
-The v0.1 `post-to-site` capability ships in the main codebase as a
-regression test for credential handling. After step 7 it is removed
-from the advertised skill list; `browser-task` subsumes its function.
-
-The v0.1 `monitor-page` and `fill-form` capabilities fold into
-`browser-task` and do not ship as separate advertised skills.
+After step 9 the v0.2 surface is three skills. The v0.1 `post-to-site`
+capability was removed in step 7 once the seeded `bsky.app` skill +
+`browser-task` covered it; the v0.1 `fetch-page-title` and v0.1
+`extract-structured-data` specialists were removed in step 9 — the
+generalist subsumes both at the cost of 2–3× tokens per call, which
+is acceptable given zero deterministic high-volume callers today. The
+v0.1 `monitor-page` and `fill-form` capabilities fold into `browser-task`
+and do not ship as separate advertised skills either.
 
 ### 5.3 Capabilities explicitly out of scope (v1)
 
@@ -714,10 +714,15 @@ hard design questions until usage forces them.
    Resolve open question #6 (how to persist typed JSON alongside
    markdown skills) in the deliverable.
 
-9. **Deprecate subsumed specialists.** Review whether `fetch-page-title`
-   / `extract-structured-data` still pay their way or fold into
-   `browser-task` with equivalent cost. Land on the minimum advertised
-   capability set v0.2 actually needs.
+9. **Deprecate subsumed specialists.** Reviewed whether `fetch-page-title`
+   / `extract-structured-data` still paid their way vs. `browser-task` at
+   equivalent cost. Both removed: `fetch-page-title` was a milestone-1
+   smoke-test relic that `browser-task` subsumes trivially;
+   `extract-structured-data` was functionally equivalent to a `browser-task`
+   intent that asks for JSON in the `done.result` channel (cost delta
+   ~2–3× tokens per call, zero deterministic high-volume callers today),
+   and was out of spec on §7.1 mandatory allowlists. Advertised surface
+   lands at `browser-task` + `learn-form-schema` + `execute-form-batch`.
 
 Each milestone produces framework feedback. Capture it in
 `docs/framework-feedback.md` — some will be small ergonomic fixes; some

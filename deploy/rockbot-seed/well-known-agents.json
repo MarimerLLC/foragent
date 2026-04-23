@@ -14,14 +14,14 @@
         "description": "Drive a browser with an LLM-in-the-loop planner to accomplish a free-form intent. Input JSON {\"intent\":\"...\",\"allowedHosts\":[\"host\",\"*.host\",\"*\"],\"url\":\"optional start\",\"credentialId\":\"optional\",\"maxSteps\":60,\"maxSeconds\":120}. allowedHosts is required and empty rejects. Returns a structured JSON result with status (done/failed/incomplete), summary, optional result, step count, and navigations."
       },
       {
-        "id": "fetch-page-title",
-        "name": "Fetch Page Title",
-        "description": "Navigate to a URL with a real browser and return the contents of its <title> element."
+        "id": "learn-form-schema",
+        "name": "Learn Form Schema",
+        "description": "Navigate to a URL, introspect the first form, and return a typed FormSchema (fields, types, required, options, dependencies). Persists the schema as a skill at sites/{host}/forms/{slug} for later reuse by execute-form-batch."
       },
       {
-        "id": "extract-structured-data",
-        "name": "Extract Structured Data",
-        "description": "Navigate to a URL and extract data matching a natural-language description, returning JSON. Input the target URL and a description of what to extract."
+        "id": "execute-form-batch",
+        "name": "Execute Form Batch",
+        "description": "Given a learned FormSchema (by ref or inline) and a batch of row data, submit the form once per row. Streams per-row progress. Default mode abort-on-first; opt into 'continue' for known-messy batches."
       }
     ]
   }
