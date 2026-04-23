@@ -83,6 +83,21 @@ var memorySection = builder.Configuration.GetSection("ForagentMemory");
 var skillsPath = memorySection["SkillsPath"] ?? "data/skills";
 var memoryPath = memorySection["MemoryPath"] ?? "data/memory";
 
+// Dream loop (step 7.5). Opt-in via ForagentDreams:Enabled — default off so
+// local `dotnet run` smoke tests don't trigger scheduled LLM calls. The
+// docker-compose harness sets this to true. CronSchedule defaults to 03:00
+// UTC daily; framework default is every 12 hours, too frequent for a browser
+// worker. Directive files ship alongside the binary under ./directives/ —
+// DreamService resolves each directive path relative to
+// AgentProfileOptions.BasePath (confirmed via IL inspection; relative paths
+// combine against AppContext.BaseDirectory).
+var dreamsSection = builder.Configuration.GetSection("ForagentDreams");
+var dreamsEnabled = dreamsSection.GetValue<bool?>("Enabled") ?? false;
+var directivesPath = dreamsSection["DirectivesPath"] ?? "directives";
+var dreamsCron = dreamsSection["CronSchedule"] ?? "0 3 * * *";
+
+builder.Services.Configure<AgentProfileOptions>(opts => opts.BasePath = directivesPath);
+
 builder.Services.AddRockBotHost(agent =>
 {
     agent.WithIdentity(agentName);
@@ -105,6 +120,38 @@ builder.Services.AddRockBotHost(agent =>
     // to BM25 retrieval.
     agent.WithSkills(opts => opts.BasePath = skillsPath);
     agent.WithLongTermMemory(opts => opts.BasePath = memoryPath);
+
+    if (dreamsEnabled)
+    {
+        agent.AddScheduling();
+        agent.WithDreaming(opts =>
+        {
+            opts.Enabled = true;
+            opts.CronSchedule = dreamsCron;
+
+            // Task-shaped dream subtypes (see directives/dream.md).
+            opts.SkillGapEnabled = true;
+            opts.SequenceSkillDetectionEnabled = true;
+            opts.MemoryMiningEnabled = true;
+
+            // Personality-shaped subtypes — not applicable to a browser
+            // worker. Disabling these skips both the LLM call and the
+            // directive-file lookup.
+            opts.PreferenceInferenceEnabled = false;
+            opts.EpisodeExtractionEnabled = false;
+            opts.TierRoutingReviewEnabled = false;
+            opts.EntityExtractionEnabled = false;
+            opts.GraphConsolidationEnabled = false;
+            opts.IdentityReflectionEnabled = false;
+            opts.DlqReviewEnabled = false;
+            opts.WispFailureAnalysisEnabled = false;
+
+            // Empty protected list — the goal is that the dream improves
+            // primer skills over time, not that primers are frozen
+            // (operator can still edit them through other channels).
+            opts.ProtectedSkillPrefixes = [];
+        });
+    }
 
     agent.Services.AddForagentCapabilities();
     agent.Services.AddHostedService<BskySeedSkillService>();
@@ -155,6 +202,19 @@ else
     app.Logger.LogWarning(
         "ForagentEmbeddings not configured — skill + memory retrieval will use BM25 only. "
         + "Set ForagentEmbeddings:Endpoint/ModelId/ApiKey to enable semantic retrieval.");
+}
+
+if (dreamsEnabled)
+{
+    app.Logger.LogInformation(
+        "ForagentDreams enabled; daily dream pass on schedule '{Cron}' will consolidate skills and memory.",
+        dreamsCron);
+}
+else
+{
+    app.Logger.LogInformation(
+        "ForagentDreams disabled. Learned skills will accumulate without consolidation; "
+        + "set ForagentDreams:Enabled=true to turn on the daily dream pass.");
 }
 
 app.Run();
