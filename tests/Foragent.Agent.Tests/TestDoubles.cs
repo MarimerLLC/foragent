@@ -138,6 +138,8 @@ internal sealed class StubBrowserPage : IBrowserPage
 {
     public List<string> Actions { get; } = [];
     public Uri CurrentUrl { get; set; } = new("https://stub.example/");
+    public HashSet<string> TimeoutSelectors { get; } = new(StringComparer.Ordinal);
+    public Action<string>? OnClick { get; set; }
 
     public Task NavigateAsync(Uri url, CancellationToken ct = default)
     {
@@ -157,12 +159,15 @@ internal sealed class StubBrowserPage : IBrowserPage
     public Task ClickAsync(string selector, CancellationToken ct = default)
     {
         Actions.Add($"click:{selector}");
+        OnClick?.Invoke(selector);
         return Task.CompletedTask;
     }
 
     public Task WaitForSelectorAsync(string selector, TimeSpan? timeout = null, CancellationToken ct = default)
     {
         Actions.Add($"wait:{selector}");
+        if (TimeoutSelectors.Contains(selector))
+            throw new TimeoutException($"Stub: '{selector}' marked as a timeout.");
         return Task.CompletedTask;
     }
 
@@ -170,6 +175,26 @@ internal sealed class StubBrowserPage : IBrowserPage
 
     public Task<string?> GetTextAsync(string selector, CancellationToken ct = default) =>
         Task.FromResult<string?>(null);
+
+    public FormScan? FormScan { get; set; }
+
+    public Task<FormScan?> ScanFormAsync(string? formSelector = null, CancellationToken ct = default)
+    {
+        Actions.Add($"scan:{formSelector ?? "<null>"}");
+        return Task.FromResult(FormScan);
+    }
+
+    public Task SelectOptionAsync(string selector, string value, CancellationToken ct = default)
+    {
+        Actions.Add($"select:{selector}:{value}");
+        return Task.CompletedTask;
+    }
+
+    public Task SetCheckedAsync(string selector, bool checked_, CancellationToken ct = default)
+    {
+        Actions.Add($"checked:{selector}:{checked_}");
+        return Task.CompletedTask;
+    }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
@@ -182,16 +207,40 @@ internal sealed class StubBrowserPage : IBrowserPage
 internal sealed class FakeSkillStore : ISkillStore
 {
     public Dictionary<string, Skill> Saved { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Dictionary<string, string>> Resources { get; } = new(StringComparer.Ordinal);
     public List<(string Query, int MaxResults)> Searches { get; } = [];
 
     public Task SaveAsync(Skill skill)
     {
+        // Match FileSkillStore's behavior: SaveAsync(skill) alone preserves
+        // the existing manifest (see rockbot commit 2db3775 fix #1).
+        if (skill.Manifest is null && Saved.TryGetValue(skill.Name, out var prior) && prior.Manifest is not null)
+            skill = skill with { Manifest = prior.Manifest };
         Saved[skill.Name] = skill;
+        return Task.CompletedTask;
+    }
+
+    public Task SaveAsync(Skill skill, IReadOnlyList<SkillResourceInput>? resources)
+    {
+        if (resources is null || resources.Count == 0)
+            return SaveAsync(skill);
+
+        var manifest = resources.Select(r => new SkillResource(r.Filename, r.Type, r.Description)).ToList();
+        var bundled = skill with { Manifest = manifest };
+        Saved[skill.Name] = bundled;
+        Resources[skill.Name] = resources.ToDictionary(r => r.Filename, r => r.Content, StringComparer.Ordinal);
         return Task.CompletedTask;
     }
 
     public Task<Skill?> GetAsync(string name) =>
         Task.FromResult(Saved.TryGetValue(name, out var skill) ? skill : null);
+
+    public Task<string?> GetResourceAsync(string skillName, string filename)
+    {
+        if (Resources.TryGetValue(skillName, out var bundle) && bundle.TryGetValue(filename, out var content))
+            return Task.FromResult<string?>(content);
+        return Task.FromResult<string?>(null);
+    }
 
     public Task<IReadOnlyList<Skill>> ListAsync() =>
         Task.FromResult<IReadOnlyList<Skill>>([.. Saved.Values]);
@@ -199,6 +248,7 @@ internal sealed class FakeSkillStore : ISkillStore
     public Task DeleteAsync(string name)
     {
         Saved.Remove(name);
+        Resources.Remove(name);
         return Task.CompletedTask;
     }
 

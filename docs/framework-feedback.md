@@ -484,3 +484,92 @@ docker-compose:
 First live dream pass against a non-empty skill store will be observed
 after enough `browser-task` runs accumulate — probably step 8 or when
 the operator turns the harness on for a sustained session.
+
+## Step 8 — `learn-form-schema` + `execute-form-batch`
+
+### Framework observations
+
+- **Multi-file skill API (RockBot 0.9) closes spec open-question #6
+  cleanly.** Step 8 needed typed JSON schemas alongside the existing
+  markdown-shaped skills; we'd sketched three options (fenced JSON in
+  the skill body, a parallel Foragent-local typed store, or an upstream
+  framework extension). The upstream extension had already landed in
+  `rockbot` main — `Skill.Manifest: IReadOnlyList<SkillResource>?` plus
+  `ISkillStore.SaveAsync(skill, resources)` and
+  `GetResourceAsync(skillName, filename)`. `SkillResourceType.JsonSchema`
+  is literally the enum value this use case needed. Foragent consumed it
+  directly: `LearnFormSchemaCapability` writes the skill bundle,
+  `ExecuteFormBatchCapability` reads `schema.json` back, no parallel
+  store. The "framework is the substrate" discipline from spec §8
+  actually paid off here — we'd have thrown away a Foragent-local store
+  one step later when the framework landed this.
+
+- **`SaveAsync(skill)` preserving the manifest is the important bit.**
+  Per commit 2db3775 fix #1, a plain
+  `ISkillStore.SaveAsync(skill)` call preserves the existing
+  `Manifest` when the incoming skill doesn't carry one. That means the
+  daily dream loop's `skill-optimize` subtype (which rewrites
+  markdown content) can't accidentally orphan resource files, and
+  Foragent's `learn-form-schema` can update a skill's prose primer
+  without re-writing the schema resource. Without this property, the
+  dream loop would silently delete Foragent's typed schemas over time.
+  Worth documenting prominently in RockBot's multi-file-skill guide —
+  future framework consumers will trip on "my resources disappeared"
+  otherwise.
+
+- **`AgentTaskContext.PublishStatus` works unchanged for per-row
+  streaming.** Step 8's `execute-form-batch` publishes
+  `AgentTaskStatusUpdate { State = Working, Message = …per-row text… }`
+  between row submissions. The surface from 0.8.x is still right for
+  this, and matches how `RockBot.ResearchAgent` uses it for its
+  iterative research loop. Nothing to change; noting so the next
+  step-N capability that wants streaming knows the shape is stable.
+
+- **Credential broker still doesn't know about storage-state or
+  per-tenant scoping.** `learn-form-schema` and `execute-form-batch`
+  both accept `credentialId` but only resolve-and-discard it for
+  audit / fail-fast; the actual authenticated-form flow (storage-state
+  reuse from a prior `browser-task` login) is still the step-4 deferred
+  item. Not new — noting because step 8's capabilities would naturally
+  use this if it existed. When storage-state lands, both form
+  capabilities grow `storageStateCredentialId` support in one pass.
+
+- **Foragent-local `FakeSkillStore` still a 40-line hand-rolled
+  double.** Step 8 adds more surface area (`SaveAsync(skill, resources)`
+  + `GetResourceAsync`) and the fake needs to match `FileSkillStore`'s
+  manifest-preservation behavior to be a faithful substitute. Still
+  noting from step 7: a `RockBot.Host.Testing` package with in-memory
+  implementations would let Foragent delete both `FakeSkillStore` in
+  `Foragent.Agent.Tests` and `InMemorySkillStore` in
+  `Foragent.Browser.Tests`, and would surface any future-proof gaps
+  in the fakes once a framework change lands.
+
+### Spec resolutions
+
+- **Open-question #6 (structured artifacts in `ISkillStore`):
+  resolved upstream.** No Foragent-local typed store. `schema.json`
+  resources under `SkillResourceType.JsonSchema`, consumed via
+  `GetResourceAsync`. Step 8 ships the reference pattern.
+- **Open-question #8 (batch retry/failure semantics): resolved as
+  abort-on-first default, caller-opt-in continue.** Rationale: forms
+  mutate, so a row failure is likely a schema or session issue where
+  continuing would generate more bad submissions, not recover. Per-row
+  status stays in the final result regardless. Deciding abort-by-default
+  aligns with how human operators would handle a failed row during a
+  paper-form batch.
+
+### Verification
+
+- Unit tests in `Foragent.Agent.Tests/Forms/` — 14 tests covering input
+  validation, schema round-trip through `SkillResource`, abort-on-first
+  vs continue semantics, `successIndicator` path, and required-field
+  validation. Run time ~3s.
+- Integration test `Foragent.Browser.Tests/FormCapabilitiesIntegrationTests`
+  — spins up Kestrel with a real HTML form, drives
+  `learn-form-schema` + `execute-form-batch` end-to-end against real
+  Chromium, verifies two rows actually land in the server's POST
+  handler. Not LLM-gated — the enricher short-circuits on forms
+  without select/radio, so this runs in CI without
+  `FORAGENT_LLM_*`.
+- Existing step-6 benchmark still 3/3 — framework bump didn't regress
+  anything else.

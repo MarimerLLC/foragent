@@ -1,4 +1,5 @@
 using Foragent.Capabilities.BrowserTask;
+using Foragent.Capabilities.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using RockBot.A2A;
 
@@ -16,7 +17,10 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
         services.AddScoped<ICapability, FetchPageTitleCapability>();
         services.AddScoped<ICapability, ExtractStructuredDataCapability>();
         services.AddScoped<ICapability, BrowserTaskCapability>();
+        services.AddScoped<ICapability, LearnFormSchemaCapability>();
+        services.AddScoped<ICapability, ExecuteFormBatchCapability>();
         services.AddScoped<BrowserTaskPriming>();
+        services.AddScoped<FormSchemaEnricher>();
         services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
         return services;
     }
@@ -33,6 +37,8 @@ public static class ForagentCapabilities
     public static IReadOnlyList<AgentSkill> Skills { get; } =
     [
         BrowserTaskCapability.SkillDefinition,
+        LearnFormSchemaCapability.SkillDefinition,
+        ExecuteFormBatchCapability.SkillDefinition,
         FetchPageTitleCapability.SkillDefinition,
         ExtractStructuredDataCapability.SkillDefinition
     ];
