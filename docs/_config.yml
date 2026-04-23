@@ -1,0 +1,21 @@
+title: Foragent
+description: An A2A-native browser agent for .NET
+url: https://foragent.dev
+
+theme: jekyll-theme-cayman
+
+# GitHub repository metadata (used by the theme for the header links)
+repository: MarimerLLC/foragent
+show_downloads: false
+
+# Don't publish these in the rendered site
+exclude:
+  - archive/
+  - framework-feedback.md
+  - README.md
+
+# Markdown + syntax highlighting
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
