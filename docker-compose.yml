@@ -61,7 +61,7 @@ services:
       RabbitMq__VirtualHost: /
       Gateway__AgentName: Foragent
       Gateway__InternalAgentName: Foragent
-      Gateway__Description: "Browser agent — browser-task (generalist), fetch-page-title, extract-structured-data, post-to-site"
+      Gateway__Description: "Browser agent — browser-task (generalist), fetch-page-title, extract-structured-data"
       # RockBot will call Foragent with header X-Api-Key: rockbot-calls-foragent
       ApiKeys__rockbot-calls-foragent__AgentId: RockBot
       ApiKeys__rockbot-calls-foragent__DisplayName: RockBot
@@ -70,15 +70,25 @@ services:
       ForagentLlm__Endpoint: ${FORAGENT_LLM_ENDPOINT:?FORAGENT_LLM_ENDPOINT is required}
       ForagentLlm__ModelId: ${FORAGENT_LLM_MODEL_ID:?FORAGENT_LLM_MODEL_ID is required}
       ForagentLlm__ApiKey: ${FORAGENT_LLM_API_KEY:?FORAGENT_LLM_API_KEY is required}
-      # Optional Bluesky credential for post-to-site. Callers invoke post-to-site
-      # with credentialId: "bluesky-rocky". Flat id (no slashes) because env-var
-      # keys use __ to separate config path segments — ids with slashes work via
-      # appsettings / user-secrets but not via env vars. Leave unset to disable;
-      # post-to-site will report "Credential '…' is not configured."
-      # For prod, replace InMemoryCredentialBroker with k8s-secrets.
+      # Optional embeddings. Empty values (default) → BM25-only skill + memory
+      # retrieval. Set any one of Endpoint/ModelId/ApiKey empty and the others
+      # are ignored (all-or-nothing at startup). Separate subscription from
+      # ForagentLlm because embedding deployments often live elsewhere.
+      ForagentEmbeddings__Endpoint: ${FORAGENT_EMBEDDINGS_ENDPOINT:-}
+      ForagentEmbeddings__ModelId: ${FORAGENT_EMBEDDINGS_MODEL_ID:-}
+      ForagentEmbeddings__ApiKey: ${FORAGENT_EMBEDDINGS_API_KEY:-}
+      # Step 7: skills + long-term memory (spec §5.6). Paths align with the
+      # mounted volume below so learned site knowledge survives restarts.
+      ForagentMemory__SkillsPath: /data/foragent/skills
+      ForagentMemory__MemoryPath: /data/foragent/memory
+      # Optional Bluesky credential used by future credentialed browser-task
+      # runs. Flat id (no slashes) because env-var keys use __ to separate
+      # config segments. Leave unset to disable.
       Credentials__bluesky-rocky__Kind: username-password
       Credentials__bluesky-rocky__Values__identifier: ${FORAGENT_BLUESKY_IDENTIFIER:-}
       Credentials__bluesky-rocky__Values__password: ${FORAGENT_BLUESKY_APP_PASSWORD:-}
+    volumes:
+      - foragent-data:/data/foragent
 
   rockbot-init:
     image: rockylhotka/rockbot-agent:0.8.5
@@ -177,3 +187,4 @@ services:
 volumes:
   rockbot-data:
   rockbot-shared:
+  foragent-data:

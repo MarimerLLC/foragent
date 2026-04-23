@@ -1,4 +1,5 @@
 using System.ClientModel;
+using Foragent.Agent;
 using Foragent.Browser;
 using Foragent.Capabilities;
 using Foragent.Credentials;
@@ -32,6 +33,27 @@ var openAiClient = new OpenAIClient(
     new OpenAIClientOptions { Endpoint = new Uri(llmEndpoint) });
 var foragentChatClient = openAiClient.GetChatClient(llmModelId).AsIChatClient();
 
+// ── Embeddings (optional, spec §5.6). Separate config section because
+//    embedding deployments often live on a different Azure AI Foundry
+//    subscription than chat completions. Missing config is logged once and
+//    downgrades skill/memory retrieval to BM25-only. ────────────────────────
+var embedSection = builder.Configuration.GetSection("ForagentEmbeddings");
+var embedEndpoint = embedSection["Endpoint"];
+var embedModelId = embedSection["ModelId"];
+var embedApiKey = embedSection["ApiKey"];
+var embeddingsConfigured = !string.IsNullOrWhiteSpace(embedEndpoint)
+    && !string.IsNullOrWhiteSpace(embedModelId)
+    && !string.IsNullOrWhiteSpace(embedApiKey);
+if (embeddingsConfigured)
+{
+    var embeddingClient = new OpenAIClient(
+        new ApiKeyCredential(embedApiKey!),
+        new OpenAIClientOptions { Endpoint = new Uri(embedEndpoint!) })
+        .GetEmbeddingClient(embedModelId!)
+        .AsIEmbeddingGenerator();
+    builder.Services.AddSingleton(embeddingClient);
+}
+
 // ── Messaging (RabbitMQ) ─────────────────────────────────────────────────────
 
 builder.Services.AddRockBotRabbitMq(opts =>
@@ -54,6 +76,13 @@ builder.Services.AddRockBotTieredChatClients(
 var gatewaySection = builder.Configuration.GetSection("Gateway");
 var agentName = gatewaySection["InternalAgentName"] ?? gatewaySection["AgentName"] ?? "Foragent";
 
+// Skill + long-term memory paths. File-backed stores from RockBot.Host; both
+// directories are created on first write. docker-compose mounts a named volume
+// at these paths so learned site knowledge survives container restarts.
+var memorySection = builder.Configuration.GetSection("ForagentMemory");
+var skillsPath = memorySection["SkillsPath"] ?? "data/skills";
+var memoryPath = memorySection["MemoryPath"] ?? "data/memory";
+
 builder.Services.AddRockBotHost(agent =>
 {
     agent.WithIdentity(agentName);
@@ -70,7 +99,15 @@ builder.Services.AddRockBotHost(agent =>
         };
     });
 
+    // Step 7: skills + long-term memory as the learning substrate (spec §5.6).
+    // FileSkillStore / FileMemoryStore pick up an IEmbeddingGenerator from DI
+    // when registered (see ForagentEmbeddings above); otherwise they fall back
+    // to BM25 retrieval.
+    agent.WithSkills(opts => opts.BasePath = skillsPath);
+    agent.WithLongTermMemory(opts => opts.BasePath = memoryPath);
+
     agent.Services.AddForagentCapabilities();
+    agent.Services.AddHostedService<BskySeedSkillService>();
 });
 
 builder.Services.AddForagentBrowser();
@@ -106,6 +143,19 @@ app.MapGet("/health", () => Results.Ok("ok"));
 app.Logger.LogInformation(
     "Foragent starting — HTTP A2A on {Urls}, bus identity '{Identity}'",
     string.Join(", ", app.Urls.DefaultIfEmpty("(default)")), agentName);
+
+if (embeddingsConfigured)
+{
+    app.Logger.LogInformation(
+        "ForagentEmbeddings configured ({ModelId}); skill + memory retrieval will use hybrid BM25 + vector.",
+        embedModelId);
+}
+else
+{
+    app.Logger.LogWarning(
+        "ForagentEmbeddings not configured — skill + memory retrieval will use BM25 only. "
+        + "Set ForagentEmbeddings:Endpoint/ModelId/ApiKey to enable semantic retrieval.");
+}
 
 app.Run();
 

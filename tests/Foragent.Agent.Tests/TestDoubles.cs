@@ -148,8 +148,8 @@ internal sealed class StubBrowserPage : IBrowserPage
 
     public Task FillAsync(string selector, string value, CancellationToken ct = default)
     {
-        // Record the selector but not the value — tests for post-to-site must
-        // never accidentally assert on password text.
+        // Record the selector but not the value — tests must never
+        // accidentally assert on values that could include sensitive input.
         Actions.Add($"fill:{selector}");
         return Task.CompletedTask;
     }
@@ -172,6 +172,81 @@ internal sealed class StubBrowserPage : IBrowserPage
         Task.FromResult<string?>(null);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>
+/// In-memory <see cref="ISkillStore"/> that ignores the query embedding and
+/// returns saved skills in insertion order. Sufficient for testing the
+/// priming / learned-skill paths without spinning up FileSkillStore.
+/// </summary>
+internal sealed class FakeSkillStore : ISkillStore
+{
+    public Dictionary<string, Skill> Saved { get; } = new(StringComparer.Ordinal);
+    public List<(string Query, int MaxResults)> Searches { get; } = [];
+
+    public Task SaveAsync(Skill skill)
+    {
+        Saved[skill.Name] = skill;
+        return Task.CompletedTask;
+    }
+
+    public Task<Skill?> GetAsync(string name) =>
+        Task.FromResult(Saved.TryGetValue(name, out var skill) ? skill : null);
+
+    public Task<IReadOnlyList<Skill>> ListAsync() =>
+        Task.FromResult<IReadOnlyList<Skill>>([.. Saved.Values]);
+
+    public Task DeleteAsync(string name)
+    {
+        Saved.Remove(name);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Skill>> SearchAsync(
+        string query, int maxResults, CancellationToken cancellationToken = default, float[]? queryEmbedding = null)
+    {
+        Searches.Add((query, maxResults));
+        return Task.FromResult<IReadOnlyList<Skill>>([.. Saved.Values.Take(maxResults)]);
+    }
+}
+
+/// <summary>
+/// In-memory <see cref="ILongTermMemory"/>; search returns entries whose
+/// content mentions the query (case-insensitive). Not intended to match the
+/// FileMemoryStore ranking — just enough to drive priming tests.
+/// </summary>
+internal sealed class FakeLongTermMemory : ILongTermMemory
+{
+    public Dictionary<string, MemoryEntry> Saved { get; } = new(StringComparer.Ordinal);
+
+    public Task SaveAsync(MemoryEntry entry, CancellationToken cancellationToken)
+    {
+        Saved[entry.Id] = entry;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<MemoryEntry>> SearchAsync(MemorySearchCriteria criteria, CancellationToken cancellationToken)
+    {
+        IEnumerable<MemoryEntry> matches = Saved.Values;
+        if (!string.IsNullOrEmpty(criteria.Query))
+            matches = matches.Where(m => m.Content.Contains(criteria.Query, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult<IReadOnlyList<MemoryEntry>>([.. matches.Take(criteria.MaxResults)]);
+    }
+
+    public Task<MemoryEntry?> GetAsync(string id, CancellationToken cancellationToken) =>
+        Task.FromResult(Saved.TryGetValue(id, out var entry) ? entry : null);
+
+    public Task DeleteAsync(string id, CancellationToken cancellationToken)
+    {
+        Saved.Remove(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> ListTagsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<string>>([.. Saved.Values.SelectMany(m => m.Tags).Distinct()]);
+
+    public Task<IReadOnlyList<string>> ListCategoriesAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<string>>([.. Saved.Values.Select(m => m.Category).OfType<string>().Distinct()]);
 }
 
 internal sealed class StubChatClient(Func<IEnumerable<ChatMessage>, ChatOptions?, Task<ChatResponse>> responder)

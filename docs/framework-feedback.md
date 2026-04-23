@@ -339,3 +339,73 @@ the planner prompt, tool surface, or model pin changes.
 - **`TieredChatClientRegistry.GetClient(ModelTier.Low/High)` is wired
   but no capability resolves it yet.** All three tiers currently alias
   to the same model. Tier-aware capability code lands as models diverge.
+
+## Step 7 — skills + memory priming
+
+### Framework observations
+
+- **`Skill` record has no tags, metadata, or importance field.** The
+  0.8.5 shape is `(Name, Summary, Content, CreatedAt, UpdatedAt?,
+  LastUsedAt?, SeeAlso)`. The "agent-learned vs human-authored"
+  distinction Foragent needs (and spec §5.6 calls out) has no first-class
+  slot — today it's encoded in the name prefix (`sites/{host}/learned/…`
+  vs `sites/{host}/…`). `ILongTermMemory`'s `MemoryEntry` by contrast
+  carries `Category`, `Tags`, `Metadata`, and `ImportanceScore`. Skills
+  would benefit from at least `Metadata` parity: agent-learned skills
+  want a `confidence` score, a `last-verified` timestamp, and a
+  `source` tag so the planner can weight them below operator primers.
+  Framework candidate: add `IReadOnlyDictionary<string, string>?
+  Metadata` on `Skill` without changing the file-backed format's
+  tolerance of older shapes.
+
+- **`ISkillStore.SearchAsync` takes an explicit `float[]?
+  queryEmbedding`.** Callers compute the embedding (via
+  `IEmbeddingGenerator<string, Embedding<float>>` from DI). This is
+  the right shape — it lets consumers cache embeddings across stores
+  and pick when to spend the embedding call — but it means the store
+  can't do any "cheap query → skip embedding" optimisation on its own.
+  Fine for Foragent's usage; worth noting for anyone expecting the
+  RockBot agent's auto-recall pattern (where the framework does the
+  embedding behind the scenes) to carry over.
+
+- **No tests-side mock / in-memory `ISkillStore`.** Foragent's tests
+  ship a 12-line `FakeSkillStore` that implements the interface by
+  hand. Framework candidate: a `RockBot.Host.Testing` package with
+  in-memory implementations of the persistence stores would let
+  downstream agents write tests without re-implementing the bag of
+  interfaces. Low-priority but trivial to produce.
+
+- **Extension methods hang off `AgentHostBuilder`, not
+  `IServiceCollection`.** `WithSkills` / `WithLongTermMemory` must be
+  called inside the `AddRockBotHost(agent => …)` callback; calling
+  them outside on `builder.Services` isn't possible. This is fine — it
+  enforces the "owned by the agent host" model — but the naming
+  convention (`With…` on a builder vs `Add…` on services) took a moment
+  to discover. No ask; noting for consistency.
+
+- **Embedding generator integration is implicit.** Register an
+  `IEmbeddingGenerator<string, Embedding<float>>` in DI; `FileSkillStore`
+  and `FileMemoryStore` presumably pick it up for vector persistence on
+  `SaveAsync`. There's no explicit handshake in the extension method
+  signatures (`WithSkills(opts)` doesn't take an
+  `IEmbeddingGenerator` or a `UseEmbeddings(bool)`). Works, but an
+  explicit `opts.UseEmbeddings = true/auto/off` would make the behavior
+  discoverable from `SkillOptions` alone.
+
+### Config and operator-facing shape
+
+- **Split embedding config from chat config.** Foragent ships two
+  separate config sections — `ForagentLlm` and `ForagentEmbeddings` —
+  because in practice embedding deployments live on different Azure AI
+  Foundry subscriptions than the chat deployment. If RockBot's own
+  `EmbeddingOptions` (under `Embedding:*`) later wants to grow this
+  flexibility, the Foragent layout is a reasonable reference shape.
+
+### Unaided floor regression check (2026-04-22)
+
+Re-ran the step-6 benchmark with priming wired in but stores empty
+(NoopSkillStore / NoopLongTermMemory in the integration harness). All 3
+scenarios still pass on first attempt — the priming wiring itself adds
+no overhead when the stores return nothing, confirming the fail-soft
+contract. A separate benchmark with a populated store is step-8-or-later
+work (need a curated skill set worth priming against).

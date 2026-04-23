@@ -7,12 +7,14 @@ invoke capabilities by name; Foragent handles the browser mechanics.
 
 - `browser-task` — **generalist**, spec §5.2. LLM-in-the-loop planner that
   drives a real browser to accomplish a free-form intent. Shipped in
-  step 6.
+  step 6; step 7 added skills + memory priming (spec §5.6).
 - `fetch-page-title` — specialist. Inherited from step 1/2.
 - `extract-structured-data` — specialist. Inherited from step 3.
-- `post-to-site` — specialist, credential-using. Inherited from step 4.
-  Scheduled for removal from the advertised list once step 7 lands
-  (`browser-task` + learned bsky skill subsume it).
+
+The step-4 `post-to-site` capability was removed in step 7 — the
+generalist `browser-task` plus the seeded `sites/bsky.app/login` skill
+subsume its function, and the project is still pre-public so no consumer
+needed a deprecation path.
 
 ## `browser-task` input shape
 
@@ -35,8 +37,8 @@ JSON in the first text part, or field-by-field metadata:
   unrestricted. Off-list navigations are aborted inside the browser
   context before Playwright issues the request.
 - `url` — optional. If provided, must match the allowlist.
-- `credentialId` — optional. Resolved but not exposed to the planner in
-  step 6; reserved for a typed login tool in a later step.
+- `credentialId` — optional. Resolved but not exposed to the planner
+  yet; reserved for a typed login tool in a later step.
 - `maxSteps` — default 60, ceiling 150. Enforced tool-side via
   `BrowserTaskState.BudgetExhausted`; once exceeded, tools return a
   "call done or fail" message and refuse further work.

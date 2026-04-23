@@ -15,6 +15,12 @@ internal sealed class ScriptedChatClient : IChatClient
 
     public int Turns { get; private set; }
 
+    /// <summary>Messages passed on the most recent <see cref="GetResponseAsync"/> call.</summary>
+    public IReadOnlyList<ChatMessage> LastMessages { get; private set; } = [];
+
+    /// <summary>Messages passed on the first <see cref="GetResponseAsync"/> call — the planner's initial prompt, before any tool results.</summary>
+    public IReadOnlyList<ChatMessage> FirstMessages { get; private set; } = [];
+
     public ScriptedChatClient(params ChatResponse[] responses)
     {
         _responses = new Queue<ChatResponse>(responses);
@@ -38,7 +44,11 @@ internal sealed class ScriptedChatClient : IChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        var captured = messages.ToArray();
         Turns++;
+        LastMessages = captured;
+        if (FirstMessages.Count == 0)
+            FirstMessages = captured;
         if (_responses.Count == 0)
             return Task.FromResult(Text("(script exhausted — stopping)"));
         return Task.FromResult(_responses.Dequeue());

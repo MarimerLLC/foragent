@@ -167,11 +167,47 @@ public class BrowserTaskIntegrationTests(TestPageServerFixture fixture)
             .UseFunctionInvocation()
             .Build();
 
+        var skillStore = new NoopSkillStore();
+        var memory = new NoopLongTermMemory();
+        var priming = new BrowserTaskPriming(
+            skillStore,
+            memory,
+            embeddingGenerator: null,
+            NullLogger<BrowserTaskPriming>.Instance);
+
         return new BrowserTaskCapability(
             fixture.Factory,
             chatClient,
             new NoCredentialsBroker(),
+            priming,
+            skillStore,
             NullLogger<BrowserTaskCapability>.Instance);
+    }
+
+    private sealed class NoopSkillStore : ISkillStore
+    {
+        public Task SaveAsync(Skill skill) => Task.CompletedTask;
+        public Task<Skill?> GetAsync(string name) => Task.FromResult<Skill?>(null);
+        public Task<IReadOnlyList<Skill>> ListAsync() =>
+            Task.FromResult<IReadOnlyList<Skill>>([]);
+        public Task DeleteAsync(string name) => Task.CompletedTask;
+        public Task<IReadOnlyList<Skill>> SearchAsync(
+            string query, int maxResults, CancellationToken cancellationToken = default, float[]? queryEmbedding = null) =>
+            Task.FromResult<IReadOnlyList<Skill>>([]);
+    }
+
+    private sealed class NoopLongTermMemory : ILongTermMemory
+    {
+        public Task SaveAsync(MemoryEntry entry, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<IReadOnlyList<MemoryEntry>> SearchAsync(MemorySearchCriteria criteria, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MemoryEntry>>([]);
+        public Task<MemoryEntry?> GetAsync(string id, CancellationToken cancellationToken) =>
+            Task.FromResult<MemoryEntry?>(null);
+        public Task DeleteAsync(string id, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<IReadOnlyList<string>> ListTagsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+        public Task<IReadOnlyList<string>> ListCategoriesAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     private static AgentTaskRequest Request(string json) => new()
