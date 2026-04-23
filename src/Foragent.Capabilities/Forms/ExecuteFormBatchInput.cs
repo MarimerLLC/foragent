@@ -51,8 +51,7 @@ internal readonly record struct ExecuteFormBatchInput(
         string? jsonPayload = dataJson ?? (!string.IsNullOrEmpty(text) && text.StartsWith('{') ? text : null);
 
         if (jsonPayload is null)
-            return Fail("Input must be a JSON object with rows, allowedHosts, and either schemaRef or schema. "
-                      + "Pass it as the A2A DataPart (invoke_agent's 'data' parameter) or as JSON in the text message.");
+            return Fail(HintedError("No structured input found."));
 
         string? schemaRef;
         FormSchema? inlineSchema = null;
@@ -119,13 +118,13 @@ internal readonly record struct ExecuteFormBatchInput(
         }
 
         if (schemaRef is null && inlineSchema is null)
-            return Fail("Provide either 'schemaRef' (a skill name) or inline 'schema'.");
+            return Fail(HintedError("Provide either 'schemaRef' (a skill name) or inline 'schema'."));
         if (schemaRef is not null && inlineSchema is not null)
             return Fail("Provide only one of 'schemaRef' or 'schema', not both.");
         if (rows is null || rows.Count == 0)
-            return Fail("Missing 'rows' — must be a non-empty array of objects.");
+            return Fail(HintedError("Missing 'rows' — must be a non-empty array of objects."));
         if (allowedHosts is null || allowedHosts.Count == 0)
-            return Fail("Missing 'allowedHosts' — execute-form-batch requires an explicit allowlist (spec §7.1).");
+            return Fail(HintedError("Missing 'allowedHosts' — execute-form-batch requires an explicit allowlist (spec §7.1)."));
 
         HostAllowlist allowlist;
         try
@@ -158,6 +157,10 @@ internal readonly record struct ExecuteFormBatchInput(
 
     private static ExecuteFormBatchInput Fail(string message) =>
         new(null, null, null, null, null, ExecuteFormBatchMode.AbortOnFirst, null, message);
+
+    private static string HintedError(string reason) => reason + " "
+        + "Pass inputs as a JSON object on the A2A DataPart — in RockBot's invoke_agent tool, that means filling the 'data' parameter with the object, NOT adding fields to the 'message' text. "
+        + "Example data: {\"schemaRef\":\"sites/host/forms/name\",\"rows\":[{\"field\":\"value\"}],\"allowedHosts\":[\"host\"]}.";
 }
 
 internal enum ExecuteFormBatchMode

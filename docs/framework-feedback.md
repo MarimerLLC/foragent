@@ -676,6 +676,25 @@ validation that didn't actually work without them.
   not framework — noting here because it's the kind of thing that
   could bite any RockBot consumer that mounts persistent state as a
   named volume.
+- **Cancel handler override pattern** — RockBot ships a default
+  `AgentTaskCancelHandler` inside `AddA2A` that assumes stateless agents
+  and always replies `TaskNotCancelable`. Foragent is stateful (browser
+  task per request, potentially minutes long), and RockBot's
+  wisp/A2A coordination can send cancel messages when a local wisp
+  fails after already dispatching an A2A task. Replacing the default
+  is simple — call `agent.HandleMessage<AgentTaskCancelRequest,
+  ForagentCancelHandler>()` after `AddA2A` and the later `AddScoped`
+  wins — but worth calling out as the canonical pattern for any
+  long-running agent. Foragent's impl uses a singleton
+  `InFlightTaskRegistry` (concurrent dict of taskId → linked CTS);
+  the task handler registers on entry and removes in `finally`, the
+  cancel handler calls `TryCancel`. Publishing nothing on successful
+  cancel is deliberate — the task's own terminal reply is the
+  acknowledgment. Framework-level observation: a `WithTaskCancellation()`
+  opt-in on `AgentHostBuilder` (or a non-internal registry type the
+  framework ships so consumers don't roll their own concurrent dict)
+  would save every stateful-agent consumer ~50 lines. Filed as a
+  candidate enhancement; non-blocking.
 - **Structured A2A input requires a DataPart, not JSON-in-text** —
   running RockBot → Foragent through the Blazor UI, the caller LLM
   kept looping on `"Missing 'allowedHosts'"` rejections. Root cause:

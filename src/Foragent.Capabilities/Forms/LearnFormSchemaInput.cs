@@ -87,10 +87,10 @@ internal readonly record struct LearnFormSchemaInput(
             allowedHosts = [.. hostsCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
 
         if (string.IsNullOrWhiteSpace(url))
-            return Fail("Missing 'url' — the page hosting the form.");
+            return Fail(HintedError("Missing 'url' — the page hosting the form."));
 
         if (allowedHosts is null || allowedHosts.Count == 0)
-            return Fail("Missing 'allowedHosts' — learn-form-schema requires an explicit allowlist (spec §7.1).");
+            return Fail(HintedError("Missing 'allowedHosts' — learn-form-schema requires an explicit allowlist (spec §7.1)."));
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var parsedUrl) ||
             (parsedUrl.Scheme != Uri.UriSchemeHttp && parsedUrl.Scheme != Uri.UriSchemeHttps))
@@ -114,6 +114,10 @@ internal readonly record struct LearnFormSchemaInput(
 
     private static LearnFormSchemaInput Fail(string message) =>
         new(null, null, null, null, null, null, message);
+
+    private static string HintedError(string reason) => reason + " "
+        + "Pass inputs as a JSON object on the A2A DataPart — in RockBot's invoke_agent tool, that means filling the 'data' parameter, NOT adding fields to the 'message' text. "
+        + "Example data: {\"url\":\"https://...\",\"allowedHosts\":[\"host\"]}.";
 
     private static string? ReadMetadata(AgentTaskRequest request, string key)
     {

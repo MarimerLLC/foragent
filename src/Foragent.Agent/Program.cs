@@ -155,6 +155,13 @@ builder.Services.AddRockBotHost(agent =>
 
     agent.Services.AddForagentCapabilities();
     agent.Services.AddHostedService<BskySeedSkillService>();
+
+    // Replace the framework's default stateless AgentTaskCancelHandler
+    // (which always returns TaskNotCancelable) with Foragent's stateful
+    // one that actually cancels the running browser task via
+    // InFlightTaskRegistry. Last AddScoped wins, so this call after
+    // AddA2A above shadows the framework default.
+    agent.HandleMessage<AgentTaskCancelRequest, ForagentCancelHandler>();
 });
 
 builder.Services.AddForagentBrowser();

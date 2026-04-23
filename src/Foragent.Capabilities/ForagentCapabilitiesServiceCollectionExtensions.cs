@@ -20,6 +20,10 @@ public static class ForagentCapabilitiesServiceCollectionExtensions
         services.AddScoped<BrowserTaskPriming>();
         services.AddScoped<FormSchemaEnricher>();
         services.AddScoped<IAgentTaskHandler, ForagentTaskHandler>();
+        // Process-wide registry: the cancel message is dispatched in a
+        // different DI scope than the task request, so the registry must
+        // outlive scopes.
+        services.AddSingleton<InFlightTaskRegistry>();
         return services;
     }
 }

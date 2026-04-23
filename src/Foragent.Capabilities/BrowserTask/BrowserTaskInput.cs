@@ -108,10 +108,12 @@ internal readonly record struct BrowserTaskInput(
             allowedHosts = [.. hostsCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
 
         if (string.IsNullOrWhiteSpace(intent))
-            return Fail("Missing 'intent' — a natural-language description of what to do.");
+            return Fail(HintedError("Missing 'intent' — a natural-language description of what to do."));
 
         if (allowedHosts is null || allowedHosts.Count == 0)
-            return Fail("Missing 'allowedHosts' — browser-task requires an explicit allowlist (spec §7.1). Use ['*'] to accept any host.");
+            return Fail(HintedError(
+                "Missing 'allowedHosts' — browser-task requires an explicit host allowlist (spec §7.1). "
+                + "Use [\"*\"] to accept any host."));
 
         HostAllowlist allowlist;
         try
@@ -141,6 +143,16 @@ internal readonly record struct BrowserTaskInput(
 
     private static BrowserTaskInput Fail(string message) =>
         new(null, null, null, null, DefaultMaxSteps, DefaultMaxSeconds, message);
+
+    /// <summary>
+    /// Appends the DataPart usage hint to an error message so the caller LLM
+    /// (which likely never read the skill description) learns the correct
+    /// invocation pattern from the rejection itself. The hint tells it *how*
+    /// to fix the call, not just *what* was missing.
+    /// </summary>
+    private static string HintedError(string reason) => reason + " "
+        + "Pass inputs as a JSON object on the A2A DataPart — in RockBot's invoke_agent tool, that means filling the 'data' parameter, NOT adding fields to the 'message' text. "
+        + "Example data: {\"intent\":\"...\",\"allowedHosts\":[\"*\"],\"url\":\"optional\"}.";
 
     private static int Clamp(int value, int min, int max) =>
         value < min ? min : value > max ? max : value;
